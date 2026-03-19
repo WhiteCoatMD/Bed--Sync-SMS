@@ -83,6 +83,7 @@ export async function POST(req: NextRequest) {
           financing_url: '',
           deposit_url: '',
           handoff_phone: owner_phone || '',
+          show_pricing: true,
         },
       })
       .select()

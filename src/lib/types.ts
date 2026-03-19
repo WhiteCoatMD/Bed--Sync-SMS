@@ -68,6 +68,7 @@ export interface DealerSettings {
   financing_url: string;
   deposit_url: string;
   handoff_phone: string;
+  show_pricing: boolean;
 }
 
 export interface Lead {

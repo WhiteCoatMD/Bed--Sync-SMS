@@ -1,39 +1,49 @@
-import Link from 'next/link';
+'use client';
 
-export default function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
+  const navItems = [
+    { href: '/admin', label: 'Conversations' },
+    { href: '/admin/settings', label: 'Settings' },
+  ];
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-brand-900 text-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/admin" className="font-bold text-lg">
-              Bed Sync AI SMS
+      <header className="bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <Link href="/admin" className="text-lg font-bold text-brand-900">
+              SMS Agent
             </Link>
-            <div className="flex items-center gap-6">
-              <Link href="/admin" className="text-sm hover:text-brand-100 transition-colors">
-                Conversations
-              </Link>
-              <Link href="/admin?tab=leads" className="text-sm hover:text-brand-100 transition-colors">
-                Leads
-              </Link>
-              <a href="https://www.bed-sync.com/admin.html" className="text-sm hover:text-brand-100 transition-colors flex items-center gap-1">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                Bed Sync Admin
-              </a>
-              <span className="text-xs bg-amber-500 text-white px-3 py-1 rounded-full">
-                Beta
-              </span>
-            </div>
+            <nav className="flex gap-1">
+              {navItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    pathname === item.href
+                      ? 'bg-brand-900 text-white'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
           </div>
+          <a
+            href="https://www.bed-sync.com/admin.html"
+            className="text-xs text-gray-500 hover:text-brand-900"
+          >
+            Back to Bed Sync
+          </a>
         </div>
-      </nav>
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {children}
-      </main>
+      </header>
+      <main className="max-w-6xl mx-auto px-4 py-6">{children}</main>
     </div>
   );
 }

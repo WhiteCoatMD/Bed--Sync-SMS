@@ -1,0 +1,343 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+
+interface DealerData {
+  id: string;
+  business_name: string;
+  twilio_phone: string | null;
+  plan: string;
+  messages_used: number;
+  messages_included: number;
+  settings: Record<string, unknown>;
+}
+
+export default function SettingsPage() {
+  const [dealer, setDealer] = useState<DealerData | null>(null);
+  const [dealerId, setDealerId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // Settings form state
+  const [autoReply, setAutoReply] = useState(true);
+  const [showPricing, setShowPricing] = useState(true);
+  const [followUpEnabled, setFollowUpEnabled] = useState(true);
+  const [maxFollowUps, setMaxFollowUps] = useState(3);
+  const [greetingStyle, setGreetingStyle] = useState('friendly');
+  const [storeAddress, setStoreAddress] = useState('');
+  const [financingUrl, setFinancingUrl] = useState('');
+  const [depositUrl, setDepositUrl] = useState('');
+  const [handoffPhone, setHandoffPhone] = useState('');
+  const [hoursStart, setHoursStart] = useState('09:00');
+  const [hoursEnd, setHoursEnd] = useState('20:00');
+
+  useEffect(() => {
+    authenticate();
+  }, []);
+
+  async function authenticate() {
+    const token = localStorage.getItem('sms_auth_token') || localStorage.getItem('auth_token');
+    if (!token) {
+      setAuthError('Not authenticated.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json();
+      if (data.success && data.dealer_id) {
+        setDealerId(data.dealer_id);
+        loadSettings(data.dealer_id);
+      } else {
+        setAuthError('SMS agent not enabled for this account.');
+        setLoading(false);
+      }
+    } catch {
+      setAuthError('Authentication failed.');
+      setLoading(false);
+    }
+  }
+
+  async function loadSettings(id: string) {
+    try {
+      const res = await fetch(`/api/dealers/settings?dealer_id=${id}`);
+      const data = await res.json();
+      if (data.success && data.dealer) {
+        setDealer(data.dealer);
+        const s = data.dealer.settings || {};
+        setAutoReply(s.auto_reply !== false);
+        setShowPricing(s.show_pricing !== false);
+        setFollowUpEnabled(s.follow_up_enabled !== false);
+        setMaxFollowUps(s.max_follow_ups || 3);
+        setGreetingStyle(s.greeting_style || 'friendly');
+        setStoreAddress(s.store_address || '');
+        setFinancingUrl(s.financing_url || '');
+        setDepositUrl(s.deposit_url || '');
+        setHandoffPhone(s.handoff_phone || '');
+        setHoursStart(s.business_hours_start || '09:00');
+        setHoursEnd(s.business_hours_end || '20:00');
+      }
+    } catch (err) {
+      console.error('Load settings error:', err);
+    }
+    setLoading(false);
+  }
+
+  async function saveSettings() {
+    if (!dealerId) return;
+    setSaving(true);
+    setSaved(false);
+    try {
+      const res = await fetch('/api/dealers/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dealer_id: dealerId,
+          settings: {
+            auto_reply: autoReply,
+            show_pricing: showPricing,
+            follow_up_enabled: followUpEnabled,
+            max_follow_ups: maxFollowUps,
+            greeting_style: greetingStyle,
+            store_address: storeAddress,
+            financing_url: financingUrl,
+            deposit_url: depositUrl,
+            handoff_phone: handoffPhone,
+            business_hours_start: hoursStart,
+            business_hours_end: hoursEnd,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (data.success) setSaved(true);
+    } catch (err) {
+      alert('Failed to save settings');
+    }
+    setSaving(false);
+  }
+
+  async function syncInventory() {
+    if (!dealerId) return;
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch('/api/inventory/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.NEXT_PUBLIC_BEDSYNC_API_KEY || '',
+        },
+        body: JSON.stringify({ dealer_id: dealerId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSyncResult(`Synced ${data.synced} items from inventory`);
+      } else {
+        setSyncResult('Sync failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      setSyncResult('Sync error');
+    }
+    setSyncing(false);
+  }
+
+  if (authError) {
+    return (
+      <div className="text-center py-20">
+        <p className="text-gray-500">{authError}</p>
+        <a href="https://www.bed-sync.com/admin.html" className="mt-4 inline-block text-brand-900 underline">
+          Go to Bed Sync Admin
+        </a>
+      </div>
+    );
+  }
+
+  if (loading) return <div className="text-center py-12 text-gray-400">Loading...</div>;
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">SMS Agent Settings</h1>
+        <Link href="/admin" className="text-sm text-brand-900 hover:underline">
+          Back to Conversations
+        </Link>
+      </div>
+
+      {dealer && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+          <div className="font-semibold">{dealer.business_name}</div>
+          <div className="text-sm text-gray-600">
+            {dealer.twilio_phone || 'No phone assigned'} | {dealer.plan} plan |{' '}
+            {dealer.messages_used}/{dealer.messages_included} messages used
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-6">
+        {/* AI Behavior */}
+        <Section title="AI Behavior">
+          <Toggle label="Auto-reply to incoming messages" value={autoReply} onChange={setAutoReply} />
+          <Toggle label="Share pricing in conversations" value={showPricing} onChange={setShowPricing} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Greeting Style</label>
+            <select
+              value={greetingStyle}
+              onChange={(e) => setGreetingStyle(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="friendly">Friendly</option>
+              <option value="professional">Professional</option>
+              <option value="casual">Casual</option>
+            </select>
+          </div>
+        </Section>
+
+        {/* Follow-ups */}
+        <Section title="Follow-ups">
+          <Toggle label="Enable automatic follow-ups" value={followUpEnabled} onChange={setFollowUpEnabled} />
+          {followUpEnabled && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Max follow-up messages</label>
+              <select
+                value={maxFollowUps}
+                onChange={(e) => setMaxFollowUps(parseInt(e.target.value))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value={1}>1</option>
+                <option value={2}>2</option>
+                <option value={3}>3</option>
+                <option value={5}>5</option>
+              </select>
+            </div>
+          )}
+        </Section>
+
+        {/* Store Info */}
+        <Section title="Store Information">
+          <Input label="Store Address" value={storeAddress} onChange={setStoreAddress} placeholder="1234 Main St, City, ST 12345" />
+          <Input label="Handoff Phone" value={handoffPhone} onChange={setHandoffPhone} placeholder="+1234567890" />
+          <Input label="Financing URL" value={financingUrl} onChange={setFinancingUrl} placeholder="https://..." />
+          <Input label="Deposit/Payment URL" value={depositUrl} onChange={setDepositUrl} placeholder="https://..." />
+        </Section>
+
+        {/* Business Hours */}
+        <Section title="Business Hours">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Opens</label>
+              <input
+                type="time"
+                value={hoursStart}
+                onChange={(e) => setHoursStart(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Closes</label>
+              <input
+                type="time"
+                value={hoursEnd}
+                onChange={(e) => setHoursEnd(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+        </Section>
+
+        {/* Inventory */}
+        <Section title="Inventory">
+          <p className="text-sm text-gray-600 mb-3">
+            Sync your Bed Sync inventory so the AI can recommend real products with accurate pricing.
+          </p>
+          <button
+            onClick={syncInventory}
+            disabled={syncing}
+            className="px-4 py-2 bg-brand-900 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50"
+          >
+            {syncing ? 'Syncing...' : 'Sync Inventory Now'}
+          </button>
+          {syncResult && (
+            <p className={`text-sm mt-2 ${syncResult.includes('failed') || syncResult.includes('error') ? 'text-red-600' : 'text-green-600'}`}>
+              {syncResult}
+            </p>
+          )}
+        </Section>
+
+        {/* Save */}
+        <div className="flex items-center gap-4 pt-4 border-t">
+          <button
+            onClick={saveSettings}
+            disabled={saving}
+            className="px-6 py-2 bg-brand-900 text-white rounded-lg font-medium hover:bg-brand-700 disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save Settings'}
+          </button>
+          {saved && <span className="text-green-600 text-sm font-medium">Settings saved!</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 className="text-lg font-semibold text-gray-900 mb-4">{title}</h2>
+      <div className="space-y-4">{children}</div>
+    </div>
+  );
+}
+
+function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-center justify-between cursor-pointer">
+      <span className="text-sm text-gray-700">{label}</span>
+      <button
+        type="button"
+        onClick={() => onChange(!value)}
+        className={`relative w-11 h-6 rounded-full transition-colors ${value ? 'bg-brand-900' : 'bg-gray-300'}`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+            value ? 'translate-x-5' : ''
+          }`}
+        />
+      </button>
+    </label>
+  );
+}
+
+function Input({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+      />
+    </div>
+  );
+}
