@@ -42,22 +42,67 @@ const STATE_LABELS: Record<string, string> = {
   lost: 'Lost',
 };
 
-// TODO: In production, get dealer_id from auth session
-const DEMO_DEALER_ID = 'REPLACE_WITH_YOUR_DEALER_ID';
-
 export default function AdminDashboard() {
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [dealerId, setDealerId] = useState<string | null>(null);
+  const [businessName, setBusinessName] = useState<string>('');
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchConversations();
-  }, [filter]);
+    authenticateDealer();
+  }, []);
+
+  useEffect(() => {
+    if (dealerId) {
+      fetchConversations();
+    }
+  }, [filter, dealerId]);
+
+  async function authenticateDealer() {
+    // Get auth token from URL param (passed from main Bed Sync app) or localStorage
+    const params = new URLSearchParams(window.location.search);
+    const tokenParam = params.get('token');
+
+    if (tokenParam) {
+      localStorage.setItem('sms_auth_token', tokenParam);
+      // Clean URL
+      window.history.replaceState({}, '', '/admin');
+    }
+
+    const token = localStorage.getItem('sms_auth_token') || localStorage.getItem('auth_token');
+    if (!token) {
+      setAuthError('Not authenticated. Please access this page from your Bed Sync admin panel.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json();
+
+      if (data.success && data.dealer_id) {
+        setDealerId(data.dealer_id);
+        setBusinessName(data.business_name || '');
+      } else {
+        setAuthError(data.error || 'SMS agent not enabled for this account.');
+      }
+    } catch (err) {
+      setAuthError('Authentication failed. Please try again from Bed Sync.');
+    }
+    setLoading(false);
+  }
 
   async function fetchConversations() {
+    if (!dealerId) return;
     setLoading(true);
     try {
-      let url = `/api/conversations?dealer_id=${DEMO_DEALER_ID}`;
+      let url = `/api/conversations?dealer_id=${dealerId}`;
       if (filter) url += `&status=${filter}`;
       const res = await fetch(url);
       const data = await res.json();
@@ -66,6 +111,22 @@ export default function AdminDashboard() {
       console.error('Fetch error:', err);
     }
     setLoading(false);
+  }
+
+  if (authError) {
+    return (
+      <div className="text-center py-20">
+        <div className="text-6xl mb-4">🔒</div>
+        <h1 className="text-xl font-bold text-gray-900 mb-2">Access Required</h1>
+        <p className="text-gray-500 max-w-md mx-auto">{authError}</p>
+        <a
+          href="https://www.bed-sync.com/admin.html"
+          className="inline-block mt-6 px-6 py-2 bg-brand-900 text-white rounded-lg hover:bg-brand-700 transition"
+        >
+          Go to Bed Sync Admin
+        </a>
+      </div>
+    );
   }
 
   const counts = {
@@ -78,7 +139,10 @@ export default function AdminDashboard() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Conversations</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Conversations</h1>
+          {businessName && <p className="text-sm text-gray-500">{businessName}</p>}
+        </div>
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-500">Filter:</span>
           {['', 'active', 'handed_off', 'follow_up', 'closed'].map((s) => (
