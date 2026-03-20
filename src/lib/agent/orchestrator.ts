@@ -1,6 +1,7 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { getServiceClient } from '../supabase';
 import { buildSystemPrompt } from './system-prompt';
-import { canTransition, shouldAutoHandoff } from './state-machine';
+import { canTransition, shouldAutoHandoff, checkHotLeadAlert } from './state-machine';
 import { searchInventory, formatInventoryForAgent } from './tools/inventory-search';
 import { generateRecommendations, formatRecommendationsForSms } from './tools/recommendation';
 import { extractQualificationSignals, mergeContext } from './tools/qualification';
@@ -14,9 +15,8 @@ import type {
   AgentState,
 } from '../types';
 
-function getOpenAI() {
-  const OpenAI = require('openai').default;
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getAnthropic() {
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 }
 
 interface OrchestratorInput {
@@ -106,19 +106,32 @@ export async function processMessage(
   const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations);
 
   try {
-    const completion = await getOpenAI().chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...chatHistory,
-        { role: 'user', content: userContent },
-      ],
-      response_format: { type: 'json_object' },
+    const anthropic = getAnthropic();
+    const anthropicMessages: Anthropic.MessageParam[] = [
+      ...chatHistory.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
+      { role: 'user', content: userContent },
+    ];
+
+    const completion = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250514',
+      system: systemPrompt,
+      messages: anthropicMessages,
       temperature: 0.7,
       max_tokens: 500,
     });
 
-    const raw = completion.choices[0]?.message?.content;
+    const rawBlock = completion.content[0];
+    const rawText = rawBlock?.type === 'text' ? rawBlock.text : null;
+    if (!rawText) {
+      return fallbackDecision(updatedContext, signals);
+    }
+
+    // Extract JSON from response (Claude may wrap in markdown code blocks)
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    const raw = jsonMatch ? jsonMatch[0] : rawText;
     if (!raw) {
       return fallbackDecision(updatedContext, signals);
     }
@@ -174,12 +187,34 @@ export async function processMessage(
       action: 'tool_call',
       details: {
         tool: 'llm_response',
-        model: 'gpt-4o-mini',
+        model: 'claude-sonnet-4-5-20250514',
         suggested_state: newState,
         handoff: parsed.should_handoff,
         score_delta: parsed.lead_score_delta,
       },
     });
+
+    // Check for hot lead alert (score >= 60 heads-up to dealer)
+    const newScore = lead.lead_score + (parsed.lead_score_delta || 0);
+    const hotLeadAlert = checkHotLeadAlert(lead.lead_score, newScore, updatedContext);
+    if (hotLeadAlert && (dealer.settings.handoff_phone || dealer.owner_phone)) {
+      const alertPhone = dealer.settings.handoff_phone || dealer.owner_phone;
+      try {
+        const { sendSms } = await import('../sms');
+        await sendSms(
+          alertPhone!,
+          hotLeadAlert,
+          dealer.twilio_phone || undefined
+        );
+        await db.from('agent_logs').insert({
+          conversation_id: conversation.id,
+          action: 'tool_call',
+          details: { tool: 'hot_lead_alert', score: newScore },
+        });
+      } catch (err) {
+        console.error('[Agent] Hot lead alert error:', err);
+      }
+    }
 
     return {
       reply: parsed.reply || "I'm sorry, could you say that again?",

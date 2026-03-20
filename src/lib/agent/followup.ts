@@ -3,8 +3,51 @@ import { sendAndTrack } from '../sms';
 import type { Conversation, DealerSettings, ConversationContext } from '../types';
 
 /**
+ * Check if the given date falls within the dealer's business hours.
+ * Returns the date adjusted to the next business hours window if outside hours.
+ */
+function adjustToBusinessHours(
+  date: Date,
+  settings: DealerSettings
+): Date {
+  const tz = settings.timezone || 'America/Chicago';
+  const startHour = parseHour(settings.business_hours_start || '09:00');
+  const endHour = parseHour(settings.business_hours_end || '18:00');
+
+  // Convert to dealer's local time
+  const localTimeStr = date.toLocaleString('en-US', { timeZone: tz });
+  const localDate = new Date(localTimeStr);
+  const currentHour = localDate.getHours() + localDate.getMinutes() / 60;
+
+  if (currentHour >= startHour && currentHour < endHour) {
+    // Within business hours, no adjustment needed
+    return date;
+  }
+
+  // Outside business hours - schedule for next business hours window
+  const adjusted = new Date(date);
+  if (currentHour >= endHour) {
+    // Past closing - schedule for tomorrow morning
+    adjusted.setDate(adjusted.getDate() + 1);
+  }
+  // Set to business hours start + 15 min buffer
+  const adjustedLocal = new Date(adjusted.toLocaleString('en-US', { timeZone: tz }));
+  adjustedLocal.setHours(Math.floor(startHour), (startHour % 1) * 60 + 15, 0, 0);
+
+  // Convert back - calculate the offset
+  const offset = adjusted.getTime() - new Date(adjusted.toLocaleString('en-US', { timeZone: tz })).getTime();
+  return new Date(adjustedLocal.getTime() + offset);
+}
+
+function parseHour(timeStr: string): number {
+  const [h, m] = timeStr.split(':').map(Number);
+  return h + (m || 0) / 60;
+}
+
+/**
  * Schedule the next follow-up for a conversation.
  * Uses the dealer's configured delays: e.g. [30, 1440, 4320] minutes.
+ * Respects business hours - delays to next open window if outside hours.
  */
 export async function scheduleFollowUp(
   conversation: Conversation,
@@ -18,7 +61,11 @@ export async function scheduleFollowUp(
   const delays = settings.follow_up_delays || [30, 1440, 4320];
   const delayMinutes = delays[nextNumber - 1] || delays[delays.length - 1];
 
-  const scheduledAt = new Date(Date.now() + delayMinutes * 60 * 1000);
+  let scheduledAt = new Date(Date.now() + delayMinutes * 60 * 1000);
+
+  // Adjust to business hours if scheduled outside
+  scheduledAt = adjustToBusinessHours(scheduledAt, settings);
+
   const message = getFollowUpMessage(nextNumber, conversation.context as ConversationContext);
 
   const db = getServiceClient();
@@ -80,6 +127,18 @@ export async function processPendingFollowUps(): Promise<number> {
       continue;
     }
 
+    // Check business hours before sending
+    const settings = conv.dealer.settings as DealerSettings;
+    const now = new Date();
+    const adjustedNow = adjustToBusinessHours(now, settings);
+    if (adjustedNow.getTime() - now.getTime() > 60000) {
+      // Outside business hours by more than a minute - reschedule
+      await db.from('follow_ups').update({
+        scheduled_at: adjustedNow.toISOString(),
+      }).eq('id', followUp.id);
+      continue;
+    }
+
     try {
       const message = followUp.message || getFollowUpMessage(
         followUp.follow_up_number,
@@ -106,11 +165,11 @@ export async function processPendingFollowUps(): Promise<number> {
       });
 
       // Schedule next follow-up if not at max
-      const settings = conv.dealer.settings as DealerSettings;
       if (followUp.follow_up_number < settings.max_follow_ups) {
         const delays = settings.follow_up_delays || [30, 1440, 4320];
         const nextDelay = delays[followUp.follow_up_number] || delays[delays.length - 1];
-        const nextScheduled = new Date(Date.now() + nextDelay * 60 * 1000);
+        let nextScheduled = new Date(Date.now() + nextDelay * 60 * 1000);
+        nextScheduled = adjustToBusinessHours(nextScheduled, settings);
 
         await db.from('follow_ups').insert({
           conversation_id: conv.id,
@@ -146,29 +205,70 @@ export async function processPendingFollowUps(): Promise<number> {
   return processed;
 }
 
+/**
+ * Generate contextual follow-up messages based on conversation history.
+ * References specific details the customer mentioned for a personal touch.
+ */
 function getFollowUpMessage(
   number: number,
   context: ConversationContext
 ): string {
   const name = context.customer_name ? ` ${context.customer_name}` : '';
+  const hasSize = !!context.mattress_size;
+  const hasBudget = context.budget_max !== null;
+  const hasFirmness = !!context.firmness;
+  const hasRecommendations = context.recommendations_shown.length > 0;
+  const hasUrgency = !!context.urgency;
+  const hasFinancing = context.financing_interest === true;
 
   switch (number) {
-    case 1:
-      if (context.mattress_size) {
-        return `Hey${name}! Just checking in - still looking for that ${context.mattress_size} mattress? Happy to help if you have any questions.`;
+    case 1: {
+      // First follow-up: reference what they were looking for
+      if (hasSize && hasBudget) {
+        return `Hey${name}! Still thinking about that ${context.mattress_size} mattress? We had some great options in your ${formatBudget(context.budget_max!)} budget range. Happy to answer any questions!`;
       }
-      return `Hey${name}! Just wanted to follow up - still looking for a new mattress? I'm here if you need any help.`;
-
-    case 2:
-      if (context.recommendations_shown.length > 0) {
-        return `Hi${name}, wanted to circle back one more time. Those mattresses I mentioned are still available if you're interested. Any questions I can answer?`;
+      if (hasSize && hasFirmness) {
+        return `Hey${name}! Just checking in on your ${context.mattress_size} mattress search. The ${context.firmness} options I found looked like a great fit for you. Any questions?`;
       }
-      return `Hi${name}, just one more check-in. If you're still mattress shopping, I'd love to help you find the right one. No pressure at all!`;
+      if (hasSize) {
+        return `Hey${name}! Still on the hunt for that ${context.mattress_size} mattress? I'm here if you have any questions or want to explore more options.`;
+      }
+      return `Hey${name}! Just checking in - still thinking about a new mattress? I'm here if you need any help narrowing things down.`;
+    }
 
-    case 3:
-      return `Last follow-up from us${name}! If you need mattress help in the future, just text back anytime. We're always here. Have a great day!`;
+    case 2: {
+      // Second follow-up: reference recommendations or specific details
+      if (hasRecommendations && hasFinancing) {
+        return `Hi${name}, those mattresses I showed you are still available! And just a reminder, we do offer financing options if that helps. Want me to send over more details?`;
+      }
+      if (hasRecommendations && hasBudget) {
+        return `Hi${name}, circling back one more time. The options I recommended in your price range are still in stock. Would you like to come check them out in person?`;
+      }
+      if (hasRecommendations) {
+        return `Hi${name}, wanted to follow up - those mattresses I mentioned are still available. Any questions about them, or would you like to explore different options?`;
+      }
+      if (hasUrgency) {
+        return `Hi${name}, I know you mentioned needing a mattress ${context.urgency}. I'd love to help you find the right one before then. Want to pick up where we left off?`;
+      }
+      return `Hi${name}, just one more check-in on your mattress search. If you're still looking, I can help you find the perfect fit. No pressure at all!`;
+    }
+
+    case 3: {
+      // Final follow-up: warm close with specifics
+      if (hasSize) {
+        return `Last note from us${name}! Whenever you're ready for that ${context.mattress_size} mattress, just text back. We're always here to help. Have a great day!`;
+      }
+      return `Last follow-up from us${name}! Whenever you need mattress help, just text back anytime. We're always here. Have a great day!`;
+    }
 
     default:
       return `Hey${name}! Still here if you need any mattress help. Just text back anytime!`;
   }
+}
+
+function formatBudget(amount: number): string {
+  if (amount >= 1000) {
+    return `$${(amount / 1000).toFixed(amount % 1000 === 0 ? 0 : 1)}k`;
+  }
+  return `$${amount}`;
 }

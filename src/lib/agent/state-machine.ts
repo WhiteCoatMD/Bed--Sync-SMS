@@ -106,3 +106,32 @@ export function shouldAutoHandoff(
 
   return { handoff: false, reason: null };
 }
+
+/**
+ * Check if a hot lead alert should be sent to the dealer.
+ * Triggers when score crosses 60 threshold (but below 80 handoff).
+ * Returns the alert message, or null if no alert needed.
+ */
+export function checkHotLeadAlert(
+  previousScore: number,
+  newScore: number,
+  context: ConversationContext
+): string | null {
+  const HOT_LEAD_THRESHOLD = 60;
+
+  // Only alert when crossing the threshold upward, and not already at handoff level
+  if (previousScore < HOT_LEAD_THRESHOLD && newScore >= HOT_LEAD_THRESHOLD && newScore < 80) {
+    const name = context.customer_name || 'A customer';
+    const details: string[] = [];
+
+    if (context.mattress_size) details.push(context.mattress_size);
+    if (context.budget_max) details.push(`~$${context.budget_max} budget`);
+    if (context.firmness) details.push(context.firmness);
+
+    const detailStr = details.length > 0 ? ` Looking for: ${details.join(', ')}.` : '';
+
+    return `[BedSync AI] Hot prospect! ${name} is showing strong interest. Score: ${newScore}.${detailStr}`;
+  }
+
+  return null;
+}

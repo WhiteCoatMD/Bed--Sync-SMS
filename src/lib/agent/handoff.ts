@@ -1,9 +1,71 @@
 import { getServiceClient } from '../supabase';
-import type { Conversation, Dealer } from '../types';
+import type { Conversation, Dealer, ConversationContext, Lead } from '../types';
+
+/**
+ * Build a detailed conversation summary for the dealer on handoff.
+ */
+function buildHandoffSummary(
+  lead: { customer_name: string | null; phone: string; lead_score: number },
+  context: ConversationContext,
+  reason: string
+): string {
+  const lines: string[] = [
+    `[BedSync AI] Handoff Summary`,
+    `---`,
+    `Customer: ${lead.customer_name || 'Unknown'}`,
+    `Phone: ${lead.phone}`,
+    `Lead Score: ${lead.lead_score}/100`,
+    `Handoff Reason: ${reason}`,
+  ];
+
+  // What they're looking for
+  const lookingFor: string[] = [];
+  if (context.mattress_size) lookingFor.push(context.mattress_size);
+  if (context.mattress_type) lookingFor.push(context.mattress_type);
+  if (context.firmness) lookingFor.push(context.firmness);
+  if (lookingFor.length > 0) {
+    lines.push(`Looking for: ${lookingFor.join(', ')}`);
+  }
+
+  if (context.budget_min || context.budget_max) {
+    const min = context.budget_min ? `$${context.budget_min}` : '?';
+    const max = context.budget_max ? `$${context.budget_max}` : '?';
+    lines.push(`Budget: ${min} - ${max}`);
+  }
+
+  if (context.sleeping_position) {
+    lines.push(`Sleep position: ${context.sleeping_position}`);
+  }
+
+  if (context.urgency) {
+    lines.push(`Timeline: ${context.urgency}`);
+  }
+
+  if (context.financing_interest) {
+    lines.push(`Interested in financing: Yes`);
+  }
+
+  if (context.recommendations_shown.length > 0) {
+    lines.push(`Products shown: ${context.recommendations_shown.length} items`);
+  }
+
+  if (context.objections.length > 0) {
+    lines.push(`Objections raised: ${context.objections.join(', ')}`);
+  }
+
+  if (context.preferred_next_step) {
+    lines.push(`Preferred next step: ${context.preferred_next_step}`);
+  }
+
+  lines.push(`---`);
+  lines.push(`View full conversation in your BedSync dashboard.`);
+
+  return lines.join('\n');
+}
 
 /**
  * Trigger a human handoff for a conversation.
- * Updates conversation status and notifies the dealer.
+ * Updates conversation status and notifies the dealer with a full summary.
  */
 export async function triggerHandoff(
   conversation: Conversation,
@@ -44,23 +106,29 @@ export async function triggerHandoff(
     details: { reason, dealer_notified: !!dealer.owner_phone },
   });
 
-  // Notify dealer owner via SMS if configured
+  // Notify dealer owner via SMS with full summary
   if (dealer.settings.handoff_phone || dealer.owner_phone) {
     const notifyPhone = dealer.settings.handoff_phone || dealer.owner_phone;
     try {
       const { sendSms } = await import('../sms');
       const lead = await db
         .from('leads')
-        .select('phone, customer_name')
+        .select('phone, customer_name, lead_score')
         .eq('id', conversation.lead_id)
         .single();
 
-      const leadName = lead.data?.customer_name || 'A customer';
-      const leadPhone = lead.data?.phone || 'unknown';
+      const context = conversation.context as ConversationContext;
+      const leadData = {
+        customer_name: lead.data?.customer_name || null,
+        phone: lead.data?.phone || 'unknown',
+        lead_score: lead.data?.lead_score || 0,
+      };
+
+      const summary = buildHandoffSummary(leadData, context, reason);
 
       await sendSms(
         notifyPhone!,
-        `[BedSync AI] Handoff needed!\n${leadName} (${leadPhone})\nReason: ${reason}\nView in dashboard to respond.`,
+        summary,
         dealer.twilio_phone || undefined
       );
     } catch (err) {
