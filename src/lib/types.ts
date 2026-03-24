@@ -69,6 +69,9 @@ export interface DealerSettings {
   deposit_url: string;
   handoff_phone: string;
   show_pricing: boolean;
+  missed_call_text: boolean;
+  after_hours_reply: boolean;
+  after_hours_message: string;
 }
 
 export interface Lead {

@@ -4,6 +4,7 @@ import { processMessage } from '@/lib/agent/orchestrator';
 import { sendAndTrack } from '@/lib/sms';
 import { scheduleFollowUp } from '@/lib/agent/followup';
 import { triggerHandoff } from '@/lib/agent/handoff';
+import { isWithinBusinessHours } from '@/lib/business-hours';
 import type { Conversation, Lead, Dealer, Message, DealerSettings } from '@/lib/types';
 
 /**
@@ -154,6 +155,34 @@ export async function POST(req: NextRequest) {
 
     // Check auto-reply setting
     if (!(dealer as Dealer).settings.auto_reply) {
+      return twimlResponse('');
+    }
+
+    const settings = (dealer as Dealer).settings;
+    const isNewConversation = (conversation as Conversation).message_count <= 1;
+
+    // After-hours auto-reply
+    if (settings.after_hours_reply !== false && !isWithinBusinessHours(settings)) {
+      const afterHoursMsg = settings.after_hours_message ||
+        `Thanks for texting ${(dealer as Dealer).business_name}! We're closed right now but we'll get back to you first thing in the morning. In the meantime, feel free to browse our inventory at our website!`;
+
+      // Only send after-hours reply once per conversation (on first message)
+      if (isNewConversation) {
+        await sendAndTrack(
+          dealer.id,
+          conversation.id,
+          from,
+          afterHoursMsg,
+          'agent'
+        );
+
+        await db.from('agent_logs').insert({
+          conversation_id: conversation.id,
+          action: 'after_hours_reply',
+          details: { message: afterHoursMsg },
+        });
+      }
+
       return twimlResponse('');
     }
 
