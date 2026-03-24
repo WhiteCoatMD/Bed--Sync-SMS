@@ -82,7 +82,7 @@ ${context.sleeping_position ? `Sleep position: ${context.sleeping_position}` : '
 ${context.mattress_type ? `Type preference: ${context.mattress_type}` : ''}
 ${context.urgency ? `Timeline: ${context.urgency}` : ''}
 ${context.financing_interest !== null ? `Financing interest: ${context.financing_interest ? 'yes' : 'no'}` : ''}
-${context.objections_raised?.length ? `Previous concerns: ${context.objections_raised.join(', ')}` : ''}
+${context.objections?.length ? `Previous concerns: ${context.objections.join(', ')}` : ''}
 
 STORE INFO:
 - Store: ${businessName} at ${storeAddr}
