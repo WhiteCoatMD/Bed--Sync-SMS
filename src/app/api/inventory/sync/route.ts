@@ -9,13 +9,33 @@ import { getServiceClient } from '@/lib/supabase';
  */
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = req.headers.get('x-api-key');
-    if (!apiKey || apiKey !== process.env.BEDSYNC_API_KEY) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const body = await req.json();
     const { dealer_id } = body;
+
+    // Auth: accept either API key or dealer auth token
+    const apiKey = req.headers.get('x-api-key');
+    const authToken = req.headers.get('authorization')?.replace('Bearer ', '');
+    let authorized = false;
+
+    if (apiKey && apiKey === process.env.BEDSYNC_API_KEY) {
+      authorized = true;
+    } else if (authToken && dealer_id) {
+      // Verify dealer auth token against main BedSync
+      try {
+        const bedsyncUrl = process.env.BEDSYNC_API_URL || 'https://www.bed-sync.com';
+        const verifyRes = await fetch(`${bedsyncUrl}/api/auth/me`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (verifyRes.ok) {
+          const verifyData = await verifyRes.json();
+          if (verifyData.user) authorized = true;
+        }
+      } catch { /* auth failed */ }
+    }
+
+    if (!authorized) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     if (!dealer_id) {
       return NextResponse.json({ error: 'dealer_id required' }, { status: 400 });

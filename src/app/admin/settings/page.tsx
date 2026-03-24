@@ -135,6 +135,7 @@ export default function SettingsPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('sms_auth_token') || localStorage.getItem('auth_token') || ''}`,
           'x-api-key': process.env.NEXT_PUBLIC_BEDSYNC_API_KEY || '',
         },
         body: JSON.stringify({ dealer_id: dealerId }),
