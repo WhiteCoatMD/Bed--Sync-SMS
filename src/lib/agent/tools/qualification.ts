@@ -121,6 +121,29 @@ export function extractQualificationSignals(
     updates.trade_in = true;
   }
 
+  // Couple detection → size hint + type hint
+  if (/\b(me and my (wife|husband|partner|girlfriend|boyfriend)|both of us|we both|couple|two of us|share.*bed)\b/.test(lower)) {
+    // Couples likely need queen or bigger, and benefit from motion isolation
+    if (!updates.mattress_size) {
+      // Don't override if they already specified a size
+    }
+  }
+
+  // Hot sleeper detection → type hint (handled by LLM via context)
+  if (/\b(hot|sweat|overheat|sleep warm|wake up.*hot|night sweats|run hot)\b/.test(lower)) {
+    // LLM will use mattress knowledge to recommend cooling options
+  }
+
+  // Back pain / health signals
+  if (/\b(back pain|bad back|sore back|hurt.*back|sciatica|hip pain|shoulder pain|neck pain|pain)\b/.test(lower)) {
+    // LLM will recommend medium-firm or hybrid based on system prompt guidance
+  }
+
+  // Heavy/big person detection
+  if (/\b(heavy|big guy|big person|overweight|plus size|300.*lbs?|250.*lbs?|large frame|big and tall)\b/.test(lower)) {
+    // LLM will recommend thicker coil/latex per system prompt
+  }
+
   return updates;
 }
 

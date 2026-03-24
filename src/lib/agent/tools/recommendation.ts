@@ -91,6 +91,34 @@ function scoreItem(item: InventoryItem, ctx: ConversationContext): number {
     score += 10;
   }
 
+  // Sleep position → firmness alignment bonus
+  if (ctx.sleeping_position && item.firmness) {
+    const positionFirmnessMap: Record<string, string[]> = {
+      side: ['soft', 'medium_soft', 'medium'],
+      back: ['medium', 'medium_firm'],
+      stomach: ['firm', 'medium_firm', 'extra_firm'],
+      combo: ['medium', 'medium_firm', 'hybrid'],
+    };
+    const idealFirmness = positionFirmnessMap[ctx.sleeping_position];
+    if (idealFirmness?.includes(item.firmness)) {
+      score += 12;
+    }
+  }
+
+  // Sleep position → type alignment bonus
+  if (ctx.sleeping_position && item.type) {
+    const positionTypeMap: Record<string, string[]> = {
+      side: ['memory_foam', 'hybrid', 'pillow_top'],
+      back: ['hybrid', 'latex', 'innerspring'],
+      stomach: ['innerspring', 'hybrid', 'latex'],
+      combo: ['hybrid', 'latex'],
+    };
+    const idealTypes = positionTypeMap[ctx.sleeping_position];
+    if (idealTypes?.includes(item.type)) {
+      score += 8;
+    }
+  }
+
   // In stock with good quantity
   if (item.quantity > 1) score += 3;
 
@@ -138,7 +166,18 @@ function buildReason(item: InventoryItem, ctx: ConversationContext): string {
     reasons.push(`$${savings.toFixed(0)} off right now`);
   }
 
-  if (ctx.sleeping_position) {
+  if (ctx.sleeping_position && item.firmness) {
+    const positionFirmnessMap: Record<string, string[]> = {
+      side: ['soft', 'medium_soft', 'medium'],
+      back: ['medium', 'medium_firm'],
+      stomach: ['firm', 'medium_firm', 'extra_firm'],
+      combo: ['medium', 'medium_firm'],
+    };
+    const ideal = positionFirmnessMap[ctx.sleeping_position];
+    if (ideal?.includes(item.firmness)) {
+      reasons.push(`great for ${ctx.sleeping_position} sleepers`);
+    }
+  } else if (ctx.sleeping_position) {
     reasons.push(`good for ${ctx.sleeping_position} sleepers`);
   }
 
