@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
-import { sendAndTrack } from '@/lib/sms';
 import type { Dealer } from '@/lib/types';
 
 /**
  * Twilio voice webhook - handles incoming calls to the dealer's Twilio number.
- * Plays a brief message, then sends an auto-text to the caller if missed_call_text is enabled.
+ *
+ * Flow:
+ * 1. Ring the dealer's handoff phone for 20 seconds
+ * 2. If dealer answers → live call, no AI
+ * 3. If no answer → plays "we just texted you" message
+ * 4. Status callback at /api/twilio/voice/missed triggers the auto-text
  */
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const from = formData.get('From') as string;
     const to = formData.get('To') as string;
-    const callStatus = formData.get('CallStatus') as string;
+
+    if (!from || !to) {
+      return voiceResponse('Sorry, this number is not available.');
+    }
 
     const db = getServiceClient();
 
@@ -30,86 +37,30 @@ export async function POST(req: NextRequest) {
 
     const settings = (dealer as Dealer).settings;
     const businessName = (dealer as Dealer).business_name;
+    const dealerPhone = settings.handoff_phone || (dealer as Dealer).owner_phone;
 
-    // Send a brief voicemail-style message, then hang up
-    // Twilio will trigger the status callback after the call ends
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+    // If dealer has a phone to ring, try them first
+    if (dealerPhone) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sms.bed-sync.com';
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Matthew">Thanks for calling ${businessName}. We're not able to answer right now, but we just sent you a text message so we can help you out. Talk soon!</Say>
-  <Hangup/>
+  <Dial timeout="20" callerId="${to}" action="${appUrl}/api/twilio/voice/missed?dealer_id=${dealer.id}&amp;caller=${encodeURIComponent(from)}">
+    <Number>${dealerPhone}</Number>
+  </Dial>
 </Response>`;
 
-    // Auto-text the caller
-    if (settings.missed_call_text !== false && from) {
-      const missedCallMessage =
-        `Hey! Sorry we missed your call at ${businessName}. ` +
-        `How can we help? Just text us back here and we'll get right on it!`;
-
-      // Find or create lead
-      const cleanPhone = from.replace(/^\+1/, '').replace(/\D/g, '');
-      let { data: lead } = await db
-        .from('leads')
-        .select('*')
-        .eq('dealer_id', dealer.id)
-        .or(`phone.eq.${from},phone.eq.${cleanPhone},phone.eq.+1${cleanPhone}`)
-        .single();
-
-      if (!lead) {
-        const { data: newLead } = await db
-          .from('leads')
-          .insert({
-            dealer_id: dealer.id,
-            phone: from,
-            source: 'phone',
-            status: 'new',
-          })
-          .select()
-          .single();
-        lead = newLead;
-      }
-
-      if (lead) {
-        // Find or create conversation
-        let { data: conversation } = await db
-          .from('conversations')
-          .select('*')
-          .eq('lead_id', lead.id)
-          .in('status', ['active', 'follow_up', 'paused', 'handed_off'])
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-
-        if (!conversation) {
-          const { data: newConv } = await db
-            .from('conversations')
-            .insert({
-              lead_id: lead.id,
-              dealer_id: dealer.id,
-              status: 'active',
-              agent_state: 'greeting',
-            })
-            .select()
-            .single();
-          conversation = newConv;
-        }
-
-        if (conversation) {
-          await sendAndTrack(
-            dealer.id,
-            conversation.id,
-            from,
-            missedCallMessage,
-            'agent'
-          );
-
-          await db.from('agent_logs').insert({
-            conversation_id: conversation.id,
-            action: 'missed_call_text',
-            details: { caller: from, call_status: callStatus },
-          });
-        }
-      }
+      return new NextResponse(twiml, {
+        headers: { 'Content-Type': 'text/xml' },
+      });
     }
+
+    // No dealer phone configured — go straight to missed call flow
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sms.bed-sync.com';
+    // Redirect to the missed handler directly
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Redirect method="POST">${appUrl}/api/twilio/voice/missed?dealer_id=${dealer.id}&amp;caller=${encodeURIComponent(from)}&amp;DialCallStatus=no-answer</Redirect>
+</Response>`;
 
     return new NextResponse(twiml, {
       headers: { 'Content-Type': 'text/xml' },
