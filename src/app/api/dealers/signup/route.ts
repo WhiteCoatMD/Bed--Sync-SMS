@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
-import { provisionLocalNumber } from '@/lib/twilio-provisioning';
+import { provisionLocalNumber } from '@/lib/telnyx-provisioning';
 import { z } from 'zod';
 import type { Plan } from '@/lib/types';
 

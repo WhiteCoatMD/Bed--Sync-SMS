@@ -1,21 +1,23 @@
-import { getTwilioClient } from './twilio';
+import { telnyxRequest } from './telnyx';
 import { getServiceClient } from './supabase';
+
+const TELNYX_MESSAGING_PROFILE_ID = process.env.TELNYX_MESSAGING_PROFILE_ID;
 
 export async function sendSms(
   to: string,
   body: string,
   from?: string
 ): Promise<string | null> {
-  const client = getTwilioClient();
-  const fromNumber = from || process.env.TWILIO_PHONE_NUMBER!;
+  const fromNumber = from || process.env.TELNYX_PHONE_NUMBER!;
 
   try {
-    const message = await client.messages.create({
-      to: formatPhone(to),
+    const data = await telnyxRequest('/messages', 'POST', {
       from: fromNumber,
-      body,
+      to: formatPhone(to),
+      text: body,
+      ...(TELNYX_MESSAGING_PROFILE_ID ? { messaging_profile_id: TELNYX_MESSAGING_PROFILE_ID } : {}),
     });
-    return message.sid;
+    return data.data?.id || null;
   } catch (err) {
     console.error('[SMS] Send error:', err);
     return null;
@@ -23,7 +25,7 @@ export async function sendSms(
 }
 
 /**
- * Send SMS using the dealer's own provisioned Twilio number,
+ * Send SMS using the dealer's own provisioned number,
  * record the message, and track usage.
  */
 export async function sendAndTrack(
@@ -42,8 +44,8 @@ export async function sendAndTrack(
     .eq('id', dealerId)
     .single();
 
-  const fromNumber = dealer?.twilio_phone || process.env.TWILIO_PHONE_NUMBER;
-  const sid = await sendSms(to, body, fromNumber || undefined);
+  const fromNumber = dealer?.twilio_phone || process.env.TELNYX_PHONE_NUMBER;
+  const messageId = await sendSms(to, body, fromNumber || undefined);
 
   // Record message
   await db.from('messages').insert({
@@ -51,7 +53,7 @@ export async function sendAndTrack(
     direction: 'outbound',
     sender,
     body,
-    twilio_sid: sid,
+    twilio_sid: messageId, // Keep field name for backward compat
   });
 
   // Update conversation message count
@@ -67,7 +69,7 @@ export async function sendAndTrack(
   // Atomic increment dealer messages_used
   await db.rpc('increment_messages_used', { d_id: dealerId });
 
-  return sid;
+  return messageId;
 }
 
 function formatPhone(phone: string): string {

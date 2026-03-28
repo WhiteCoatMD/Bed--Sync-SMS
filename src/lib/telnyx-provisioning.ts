@@ -1,0 +1,123 @@
+import { telnyxRequest } from './telnyx';
+import { getServiceClient } from './supabase';
+
+interface ProvisionResult {
+  success: boolean;
+  phoneNumber?: string;
+  id?: string;
+  error?: string;
+}
+
+/**
+ * Search for and purchase a local Telnyx number matching the dealer's area code.
+ * Falls back to any US number if no local match.
+ */
+export async function provisionLocalNumber(
+  dealerId: string,
+  areaCode: string,
+  webhookBaseUrl: string
+): Promise<ProvisionResult> {
+  const webhookUrl = `${webhookBaseUrl}/api/telnyx/inbound`;
+
+  try {
+    // 1. Search for available numbers with the requested area code
+    let searchResult = await telnyxRequest(
+      `/available_phone_numbers?filter[country_code]=US&filter[national_destination_code]=${areaCode}&filter[features][]=sms&filter[limit]=5`
+    );
+
+    let available = searchResult.data || [];
+
+    // 2. Fallback: if no numbers in that area code, try any US number
+    if (available.length === 0) {
+      searchResult = await telnyxRequest(
+        `/available_phone_numbers?filter[country_code]=US&filter[features][]=sms&filter[limit]=5`
+      );
+      available = searchResult.data || [];
+    }
+
+    if (available.length === 0) {
+      return { success: false, error: 'No SMS-capable numbers available' };
+    }
+
+    // 3. Purchase the first available number
+    const chosen = available[0];
+    const orderResult = await telnyxRequest('/number_orders', 'POST', {
+      phone_numbers: [{ phone_number: chosen.phone_number }],
+      messaging_profile_id: process.env.TELNYX_MESSAGING_PROFILE_ID || undefined,
+      connection_id: process.env.TELNYX_CONNECTION_ID || undefined,
+    });
+
+    const purchasedNumber = chosen.phone_number;
+
+    // 4. Save to dealer record
+    const db = getServiceClient();
+    await db
+      .from('dealers')
+      .update({ twilio_phone: purchasedNumber })
+      .eq('id', dealerId);
+
+    console.log(`[Telnyx] Provisioned ${purchasedNumber} for dealer ${dealerId}`);
+
+    return {
+      success: true,
+      phoneNumber: purchasedNumber,
+      id: orderResult.data?.id,
+    };
+  } catch (err: any) {
+    console.error('[Telnyx] Provisioning error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Release a Telnyx number when a dealer cancels.
+ */
+export async function releaseNumber(phoneNumber: string): Promise<boolean> {
+  try {
+    // Find the number in Telnyx
+    const result = await telnyxRequest(
+      `/phone_numbers?filter[phone_number]=${encodeURIComponent(phoneNumber)}`
+    );
+
+    const numbers = result.data || [];
+    if (numbers.length > 0) {
+      await telnyxRequest(`/phone_numbers/${numbers[0].id}`, 'DELETE');
+      console.log(`[Telnyx] Released ${phoneNumber}`);
+      return true;
+    }
+
+    return false;
+  } catch (err) {
+    console.error('[Telnyx] Release error:', err);
+    return false;
+  }
+}
+
+/**
+ * Update the messaging profile for an existing number.
+ */
+export async function updateWebhook(
+  phoneNumber: string,
+  _webhookBaseUrl: string
+): Promise<boolean> {
+  try {
+    // In Telnyx, webhooks are configured at the messaging profile level,
+    // not per-number. If needed, update the messaging profile instead.
+    const result = await telnyxRequest(
+      `/phone_numbers?filter[phone_number]=${encodeURIComponent(phoneNumber)}`
+    );
+
+    const numbers = result.data || [];
+    if (numbers.length > 0 && process.env.TELNYX_MESSAGING_PROFILE_ID) {
+      await telnyxRequest(`/phone_numbers/${numbers[0].id}`, 'PATCH', {
+        messaging_profile_id: process.env.TELNYX_MESSAGING_PROFILE_ID,
+      });
+      return true;
+    }
+
+    return false;
+  } catch (err) {
+    console.error('[Telnyx] Webhook update error:', err);
+    return false;
+  }
+}
