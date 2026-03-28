@@ -127,7 +127,7 @@ export async function processMessage(
       try {
         const anthropic = getAnthropic();
         const completion = await anthropic.messages.create({
-          model: 'claude-sonnet-4-5-20250514',
+          model: 'claude-sonnet-4-6-20250514',
           system: systemPrompt,
           messages: llmMessages as Anthropic.MessageParam[],
           temperature: 0.7,
@@ -167,10 +167,13 @@ export async function processMessage(
 
     // Extract JSON from response (Claude may wrap in markdown code blocks)
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    const raw = jsonMatch ? jsonMatch[0] : rawText;
+    let raw = jsonMatch ? jsonMatch[0] : rawText;
     if (!raw) {
       return fallbackDecision(updatedContext, signals);
     }
+
+    // Fix common LLM JSON issues: +5 → 5, trailing commas
+    raw = raw.replace(/:\s*\+(\d)/g, ': $1').replace(/,\s*([}\]])/g, '$1');
 
     const parsed = JSON.parse(raw) as {
       reply: string;

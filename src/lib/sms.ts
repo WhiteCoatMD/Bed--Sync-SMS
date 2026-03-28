@@ -11,15 +11,17 @@ export async function sendSms(
   const fromNumber = from || process.env.TELNYX_PHONE_NUMBER!;
 
   try {
+    console.log(`[SMS] Sending from ${fromNumber} to ${formatPhone(to)}: ${body.substring(0, 50)}...`);
     const data = await telnyxRequest('/messages', 'POST', {
       from: fromNumber,
       to: formatPhone(to),
       text: body,
       ...(TELNYX_MESSAGING_PROFILE_ID ? { messaging_profile_id: TELNYX_MESSAGING_PROFILE_ID } : {}),
     });
+    console.log(`[SMS] Sent successfully: ${data.data?.id}`);
     return data.data?.id || null;
-  } catch (err) {
-    console.error('[SMS] Send error:', err);
+  } catch (err: any) {
+    console.error('[SMS] Send error:', err?.message || err);
     return null;
   }
 }
