@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { getServiceClient } from '../supabase';
 import { buildSystemPrompt } from './system-prompt';
 import { canTransition, shouldAutoHandoff, checkHotLeadAlert } from './state-machine';
@@ -17,6 +18,10 @@ import type {
 
 function getAnthropic() {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+}
+
+function getOpenAI() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
 interface OrchestratorInput {
@@ -106,25 +111,56 @@ export async function processMessage(
   const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations);
 
   try {
-    const anthropic = getAnthropic();
-    const anthropicMessages: Anthropic.MessageParam[] = [
+    let rawText: string | null = null;
+    let modelUsed = 'unknown';
+
+    const llmMessages = [
       ...chatHistory.map((m) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
       })),
-      { role: 'user', content: userContent },
+      { role: 'user' as const, content: userContent },
     ];
 
-    const completion = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250514',
-      system: systemPrompt,
-      messages: anthropicMessages,
-      temperature: 0.7,
-      max_tokens: 500,
-    });
+    // Try Anthropic first, fall back to OpenAI
+    if (process.env.ANTHROPIC_API_KEY) {
+      try {
+        const anthropic = getAnthropic();
+        const completion = await anthropic.messages.create({
+          model: 'claude-sonnet-4-5-20250514',
+          system: systemPrompt,
+          messages: llmMessages as Anthropic.MessageParam[],
+          temperature: 0.7,
+          max_tokens: 500,
+        });
+        const rawBlock = completion.content[0];
+        rawText = rawBlock?.type === 'text' ? rawBlock.text : null;
+        modelUsed = 'claude-sonnet-4-5-20250514';
+      } catch (anthropicErr) {
+        console.error('[Agent] Anthropic error, falling back to OpenAI:', anthropicErr);
+      }
+    }
 
-    const rawBlock = completion.content[0];
-    const rawText = rawBlock?.type === 'text' ? rawBlock.text : null;
+    // Fallback to OpenAI if Anthropic failed or unavailable
+    if (!rawText && process.env.OPENAI_API_KEY) {
+      try {
+        const openai = getOpenAI();
+        const completion = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...llmMessages,
+          ],
+          temperature: 0.7,
+          max_tokens: 500,
+        });
+        rawText = completion.choices[0]?.message?.content || null;
+        modelUsed = 'gpt-4o';
+      } catch (openaiErr) {
+        console.error('[Agent] OpenAI fallback error:', openaiErr);
+      }
+    }
+
     if (!rawText) {
       return fallbackDecision(updatedContext, signals);
     }
@@ -187,7 +223,7 @@ export async function processMessage(
       action: 'tool_call',
       details: {
         tool: 'llm_response',
-        model: 'claude-sonnet-4-5-20250514',
+        model: modelUsed,
         suggested_state: newState,
         handoff: parsed.should_handoff,
         score_delta: parsed.lead_score_delta,
