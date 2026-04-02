@@ -89,9 +89,11 @@ export function formatInventoryForAgent(items: InventoryItem[]): string {
   return items
     .map((item, i) => {
       const effectivePrice = item.sale_price || item.price;
-      const priceStr = item.sale_price
-        ? `$${item.sale_price} (was $${item.price})`
-        : `$${item.price}`;
+      const priceStr = !effectivePrice || effectivePrice === 0
+        ? 'Price: Contact us'
+        : item.sale_price
+          ? `$${item.sale_price} (was $${item.price})`
+          : `$${item.price}`;
 
       return [
         `[${i + 1}] ${item.brand} ${item.model}${item.series ? ' ' + item.series : ''}`,

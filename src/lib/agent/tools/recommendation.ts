@@ -216,9 +216,11 @@ export function formatRecommendationsForSms(
   }
 
   const lines = recs.map((r, i) => {
-    const priceStr = r.sale_price
-      ? `$${r.sale_price} (was $${r.price})`
-      : `$${r.price}`;
+    const priceStr = !r.price || r.price === 0
+      ? 'Ask for pricing'
+      : r.sale_price
+        ? `$${r.sale_price} (was $${r.price})`
+        : `$${r.price}`;
     return `${i + 1}. ${r.product_name}\n   ${r.size} | ${r.firmness} | ${priceStr}\n   ${r.why_it_fits}`;
   });
 
