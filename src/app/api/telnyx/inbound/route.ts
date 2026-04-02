@@ -33,16 +33,62 @@ export async function POST(req: NextRequest) {
 
     const db = getServiceClient();
 
-    // Find the dealer by their phone number
-    const { data: dealer } = await db
-      .from('dealers')
-      .select('*')
-      .eq('twilio_phone', to)
-      .eq('active', true)
+    // Check if this customer has an existing conversation (any dealer)
+    const cleanFromPhone = from.replace(/^\+1/, '').replace(/\D/g, '');
+    const { data: existingLead } = await db
+      .from('leads')
+      .select('id, dealer_id')
+      .or(`phone.eq.${from},phone.eq.${cleanFromPhone},phone.eq.+1${cleanFromPhone}`)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .single();
 
+    let dealer: Dealer | null = null;
+
+    if (existingLead) {
+      // Route to the dealer from their existing conversation
+      const { data: existingDealer } = await db
+        .from('dealers')
+        .select('*')
+        .eq('id', existingLead.dealer_id)
+        .eq('active', true)
+        .single();
+      dealer = existingDealer;
+    }
+
     if (!dealer) {
-      console.error('[Telnyx] No dealer found for number:', to);
+      // Check for keyword routing (first word of message)
+      const keyword = body.trim().split(/\s+/)[0].toUpperCase();
+      const { data: allDealers } = await db
+        .from('dealers')
+        .select('*')
+        .eq('active', true);
+
+      if (allDealers) {
+        const keywordDealer = allDealers.find((d: any) => {
+          const keywords: string[] = d.settings?.routing_keywords || [];
+          return keywords.map((k: string) => k.toUpperCase()).includes(keyword);
+        });
+
+        if (keywordDealer) {
+          dealer = keywordDealer as Dealer;
+        }
+      }
+    }
+
+    if (!dealer) {
+      // Fall back to matching by phone number (direct dealer numbers)
+      const { data: phoneDealer } = await db
+        .from('dealers')
+        .select('*')
+        .eq('twilio_phone', to)
+        .eq('active', true)
+        .single();
+      dealer = phoneDealer;
+    }
+
+    if (!dealer) {
+      console.error('[Telnyx] No dealer found for number:', to, 'keyword:', body.trim().split(/\s+/)[0]);
       return NextResponse.json({ ok: true });
     }
 
