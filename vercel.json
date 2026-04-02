@@ -3,6 +3,10 @@
     {
       "path": "/api/agent/followup",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/inventory/sync-all",
+      "schedule": "0 */6 * * *"
     }
   ]
 }
