@@ -11,6 +11,9 @@ interface ConversationRow {
   follow_up_count: number;
   updated_at: string;
   created_at: string;
+  handed_off_at: string | null;
+  handed_off_reason: string | null;
+  handoff_acknowledged_at: string | null;
   lead: {
     id: string;
     phone: string;
@@ -64,6 +67,7 @@ export default function AdminDashboard() {
   const [businessName, setBusinessName] = useState<string>('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'updated' | 'score' | 'messages'>('updated');
+  const [acknowledging, setAcknowledging] = useState<string | null>(null);
 
   useEffect(() => {
     authenticateDealer();
@@ -158,6 +162,23 @@ export default function AdminDashboard() {
     setLoading(false);
   }
 
+  async function acknowledgeHandoff(conversationId: string) {
+    setAcknowledging(conversationId);
+    try {
+      await fetch(`/api/conversations/${conversationId}/acknowledge`, { method: 'POST' });
+      setAllConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId
+            ? { ...c, handoff_acknowledged_at: new Date().toISOString() }
+            : c
+        )
+      );
+    } catch (err) {
+      console.error('Acknowledge error:', err);
+    }
+    setAcknowledging(null);
+  }
+
   if (authError) {
     return (
       <div className="text-center py-20">
@@ -183,6 +204,10 @@ export default function AdminDashboard() {
     converted: allConversations.filter((c) => c.agent_state === 'converted').length,
     hot: allConversations.filter((c) => c.lead.lead_score >= 70).length,
   };
+
+  const unacknowledgedHandoffs = allConversations.filter(
+    (c) => c.status === 'handed_off' && !c.handoff_acknowledged_at
+  );
 
   return (
     <div>
@@ -218,6 +243,60 @@ export default function AdminDashboard() {
           </select>
         </div>
       </div>
+
+      {/* Handoff Alert Banner */}
+      {unacknowledgedHandoffs.length > 0 && (
+        <div className="mb-6 rounded-xl border-2 border-red-300 bg-red-50 overflow-hidden">
+          <div className="flex items-center gap-3 px-4 py-3 bg-red-100 border-b border-red-200">
+            <span className="text-red-600 text-lg">🚨</span>
+            <span className="font-bold text-red-800 text-sm">
+              {unacknowledgedHandoffs.length === 1
+                ? '1 conversation needs your attention'
+                : `${unacknowledgedHandoffs.length} conversations need your attention`}
+            </span>
+          </div>
+          <div className="divide-y divide-red-100">
+            {unacknowledgedHandoffs.map((c) => (
+              <div key={c.id} className="flex items-center justify-between px-4 py-3 gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center text-sm font-bold text-red-700 shrink-0">
+                    {c.lead.lead_score}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-gray-900 text-sm truncate">
+                      {c.lead.customer_name || c.lead.phone}
+                    </div>
+                    <div className="text-xs text-gray-500 flex items-center gap-2">
+                      {c.lead.customer_name && <span>{c.lead.phone}</span>}
+                      {c.handed_off_reason && (
+                        <>
+                          {c.lead.customer_name && <span>·</span>}
+                          <span className="truncate">{c.handed_off_reason}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Link
+                    href={`/admin/conversations/${c.id}`}
+                    className="text-xs px-3 py-1.5 bg-white border border-red-300 text-red-700 rounded-lg font-medium hover:bg-red-50 transition"
+                  >
+                    View
+                  </Link>
+                  <button
+                    onClick={() => acknowledgeHandoff(c.id)}
+                    disabled={acknowledging === c.id}
+                    className="text-xs px-3 py-1.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition"
+                  >
+                    {acknowledging === c.id ? 'Saving...' : 'Acknowledge'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Stats Row */}
       <div className="grid grid-cols-6 gap-3 mb-6">

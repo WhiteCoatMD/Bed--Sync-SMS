@@ -48,20 +48,9 @@ export async function processMessage(
   const signals = extractQualificationSignals(inboundMessage);
   const updatedContext = mergeContext(context, signals as Partial<ConversationContext>);
 
-  // 2. Check for automatic handoff triggers
+  // 2. Check for automatic handoff triggers — but don't return early.
+  // Always let the LLM answer the customer's question first, then hand off.
   const handoffCheck = shouldAutoHandoff(updatedContext, lead.lead_score, inboundMessage);
-  if (handoffCheck.handoff) {
-    return {
-      reply: getHandoffMessage(dealer.business_name, handoffCheck.reason!),
-      new_state: 'handed_off',
-      context_updates: signals as Partial<ConversationContext>,
-      qualification_updates: signals,
-      should_handoff: true,
-      handoff_reason: handoffCheck.reason!,
-      lead_score_delta: 15,
-      agent_note: `Auto-handoff: ${handoffCheck.reason}`,
-    };
-  }
 
   // 3. If in recommending state and we have search criteria, search inventory
   let inventoryContext = '';
@@ -105,10 +94,11 @@ export async function processMessage(
     dealer.business_name,
     dealer.settings,
     updatedContext,
-    needsInventory && recommendations.length > 0 ? 'recommending' : currentState
+    needsInventory && recommendations.length > 0 ? 'recommending' : currentState,
+    { phone: dealer.owner_phone, website: dealer.settings.store_website }
   );
 
-  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations);
+  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined);
 
   try {
     let rawText: string | null = null;
@@ -162,7 +152,7 @@ export async function processMessage(
     }
 
     if (!rawText) {
-      return fallbackDecision(updatedContext, signals);
+      return fallbackDecision(updatedContext, signals, handoffCheck);
     }
 
     // Extract JSON from response (Claude may wrap in markdown code blocks)
@@ -257,16 +247,16 @@ export async function processMessage(
 
     return {
       reply: parsed.reply || "I'm sorry, could you say that again?",
-      new_state: newState,
+      new_state: handoffCheck.handoff ? 'handed_off' : newState,
       context_updates: allContextUpdates,
       qualification_updates: {
         ...signals,
         ...(parsed.qualification_updates || {}),
       },
-      should_handoff: parsed.should_handoff || false,
-      handoff_reason: parsed.handoff_reason || undefined,
-      lead_score_delta: parsed.lead_score_delta || 0,
-      agent_note: parsed.agent_note || undefined,
+      should_handoff: handoffCheck.handoff || parsed.should_handoff || false,
+      handoff_reason: handoffCheck.reason || parsed.handoff_reason || undefined,
+      lead_score_delta: parsed.lead_score_delta || (handoffCheck.handoff ? 15 : 0),
+      agent_note: handoffCheck.handoff ? `Auto-handoff: ${handoffCheck.reason}` : parsed.agent_note || undefined,
     };
   } catch (err) {
     console.error('[Agent] LLM error:', err);
@@ -299,7 +289,8 @@ function buildChatHistory(
 function buildUserMessage(
   message: string,
   inventoryContext: string,
-  recommendations: ReturnType<typeof generateRecommendations>
+  recommendations: ReturnType<typeof generateRecommendations>,
+  pendingHandoffBusiness?: string
 ): string {
   let content = `Customer says: "${message}"`;
 
@@ -315,6 +306,10 @@ function buildUserMessage(
           `${i + 1}. ${r.product_name} - ${r.size} - $${r.price}${r.sale_price ? ` (sale)` : ''} - ${r.firmness} - ${r.why_it_fits}`
       )
       .join('\n');
+  }
+
+  if (pendingHandoffBusiness) {
+    content += `\n\nIMPORTANT: Answer the customer's question fully and naturally, then in the same message let them know you're connecting them with someone from ${pendingHandoffBusiness} who can help further. Keep it warm and brief — one reply that does both.`;
   }
 
   content += '\n\nRespond with JSON as specified in your system prompt.';
@@ -334,12 +329,16 @@ function getHandoffMessage(businessName: string, reason: string): string {
 
 function fallbackDecision(
   context: ConversationContext,
-  signals: Record<string, unknown>
+  signals: Record<string, unknown>,
+  handoffCheck?: { handoff: boolean; reason: string | null }
 ): AgentDecision {
   return {
     reply: "Thanks for your message! I'm having a moment - let me get back to you shortly, or feel free to call us directly.",
     context_updates: signals as Partial<ConversationContext>,
     qualification_updates: signals,
+    should_handoff: handoffCheck?.handoff || false,
+    handoff_reason: handoffCheck?.reason || undefined,
+    new_state: handoffCheck?.handoff ? 'handed_off' : undefined,
     agent_note: 'Fallback response due to LLM error',
   };
 }

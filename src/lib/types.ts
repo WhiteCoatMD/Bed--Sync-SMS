@@ -74,6 +74,8 @@ export interface DealerSettings {
   timezone: string;
   greeting_style: string;
   store_address: string;
+  store_phone: string;
+  store_website: string;
   financing_url: string;
   deposit_url: string;
   handoff_phone: string;
@@ -124,6 +126,7 @@ export interface Conversation {
   next_follow_up_at: string | null;
   handed_off_at: string | null;
   handed_off_reason: string | null;
+  handoff_acknowledged_at: string | null;
   closed_at: string | null;
   message_count: number;
   created_at: string;

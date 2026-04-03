@@ -94,14 +94,23 @@ export function shouldAutoHandoff(
     return { handoff: true, reason: 'Customer appears frustrated/angry' };
   }
 
-  // Ready to buy now
+  // Ready to buy now (explicit purchase intent)
   if (/\b(buy now|purchase|take it|i.?ll take|ready to buy|want to buy|credit card|pay now)\b/.test(lower)) {
     return { handoff: true, reason: 'Customer ready to purchase - hot lead' };
   }
 
-  // High lead score
-  if (leadScore >= 80) {
-    return { handoff: true, reason: 'High lead score - hot lead' };
+  // High score + active buying/visit intent (score alone is not enough)
+  const hasBuyingIntent =
+    context.urgency === 'immediate' ||
+    /\b(come in|come by|stop by|visit|want to see it|want to try|want to come|on my way|heading over|can i come)\b/.test(lower);
+
+  if (leadScore >= 80 && hasBuyingIntent) {
+    return { handoff: true, reason: 'High lead score with buying intent - hot lead' };
+  }
+
+  // Very high score alone (90+) — strong signal even without explicit message
+  if (leadScore >= 90) {
+    return { handoff: true, reason: 'Very high lead score - hot lead' };
   }
 
   return { handoff: false, reason: null };

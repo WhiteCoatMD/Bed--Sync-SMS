@@ -1,14 +1,22 @@
 import type { DealerSettings, ConversationContext, AgentState } from '../types';
 
+export interface DealerInfo {
+  phone?: string | null;
+  website?: string | null;
+}
+
 export function buildSystemPrompt(
   businessName: string,
   settings: DealerSettings,
   context: ConversationContext,
-  state: AgentState
+  state: AgentState,
+  dealerInfo?: DealerInfo
 ): string {
-  const storeAddr = settings.store_address || 'our store';
+  const storeAddr = settings.store_address || '';
   const financingUrl = settings.financing_url || '';
   const depositUrl = settings.deposit_url || '';
+  const storePhone = settings.store_phone || dealerInfo?.phone || '';
+  const storeWebsite = settings.store_website || dealerInfo?.website || '';
 
   return `You are a friendly SMS sales assistant for ${businessName}, a mattress dealer. You text like a knowledgeable friend who genuinely loves helping people sleep better.
 
@@ -85,7 +93,10 @@ ${context.financing_interest !== null ? `Financing interest: ${context.financing
 ${context.objections?.length ? `Previous concerns: ${context.objections.join(', ')}` : ''}
 
 STORE INFO:
-- Store: ${businessName} at ${storeAddr}
+- Store name: ${businessName}
+${storeAddr ? `- Address: ${storeAddr}` : '- Address: not set — if customer asks where you are located, let them know you can get them that info or ask them to call'}
+${storePhone ? `- Phone: ${storePhone}` : ''}
+${storeWebsite ? `- Website: ${storeWebsite}` : ''}
 ${financingUrl ? `- Financing application: ${financingUrl}` : ''}
 ${depositUrl ? `- Deposit/payment link: ${depositUrl}` : ''}
 
@@ -116,9 +127,10 @@ Respond with a JSON object:
   "should_handoff": false,
   "handoff_reason": null,
   "lead_score_delta": 0,
-  "agent_note": "internal note about this interaction",
-  "tools_needed": ["inventory_search"] or []
+  "agent_note": "internal note about this interaction"
 }
 
-Only include fields that changed. lead_score_delta: +5 engaged, +10 qualified, +15 buying signals, +20 ready to buy, -5 disengaged.`;
+Only include fields that changed. lead_score_delta: +5 engaged, +10 qualified, +15 buying signals, +20 ready to buy, -5 disengaged.
+
+IMPORTANT: If PRE-SCORED RECOMMENDATIONS are included in the user message, present them NOW in your reply — do not say "let me find options" or defer to a future message. The inventory search has already been done for you.`;
 }

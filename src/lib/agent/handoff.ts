@@ -1,4 +1,5 @@
 import { getServiceClient } from '../supabase';
+import { sendEmail, buildHandoffEmailHtml } from '../email';
 import type { Conversation, Dealer, ConversationContext, Lead } from '../types';
 
 /**
@@ -74,7 +75,7 @@ export async function triggerHandoff(
 ): Promise<void> {
   const db = getServiceClient();
 
-  // Update conversation
+  // Update conversation — handoff_acknowledged_at: null means unacknowledged
   await db
     .from('conversations')
     .update({
@@ -82,7 +83,8 @@ export async function triggerHandoff(
       agent_state: 'handed_off',
       handed_off_at: new Date().toISOString(),
       handed_off_reason: reason,
-      next_follow_up_at: null, // cancel any pending follow-ups
+      handoff_acknowledged_at: null,
+      next_follow_up_at: null,
     })
     .eq('id', conversation.id);
 
@@ -106,33 +108,68 @@ export async function triggerHandoff(
     details: { reason, dealer_notified: !!dealer.owner_phone },
   });
 
-  // Notify dealer owner via SMS with full summary
+  // Load lead data for notifications
+  const { data: leadData } = await db
+    .from('leads')
+    .select('phone, customer_name, lead_score')
+    .eq('id', conversation.lead_id)
+    .single();
+
+  const context = conversation.context as ConversationContext;
+  const lead = {
+    customer_name: leadData?.customer_name || null,
+    phone: leadData?.phone || 'unknown',
+    lead_score: leadData?.lead_score || 0,
+  };
+
+  const summary = buildHandoffSummary(lead, context, reason);
+
+  // SMS notification
   if (dealer.settings.handoff_phone || dealer.owner_phone) {
     const notifyPhone = dealer.settings.handoff_phone || dealer.owner_phone;
     try {
       const { sendSms } = await import('../sms');
-      const lead = await db
-        .from('leads')
-        .select('phone, customer_name, lead_score')
-        .eq('id', conversation.lead_id)
-        .single();
-
-      const context = conversation.context as ConversationContext;
-      const leadData = {
-        customer_name: lead.data?.customer_name || null,
-        phone: lead.data?.phone || 'unknown',
-        lead_score: lead.data?.lead_score || 0,
-      };
-
-      const summary = buildHandoffSummary(leadData, context, reason);
-
-      await sendSms(
-        notifyPhone!,
-        summary,
-        dealer.twilio_phone || undefined
-      );
+      await sendSms(notifyPhone!, summary, dealer.twilio_phone || undefined);
     } catch (err) {
-      console.error('[Handoff] Notification error:', err);
+      console.error('[Handoff] SMS notification error:', err);
+    }
+  }
+
+  // Email notification
+  const notifyEmail = dealer.owner_email;
+  if (notifyEmail) {
+    try {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sms.bed-sync.com';
+      const dashboardUrl = `${appUrl}/admin/conversations/${conversation.id}`;
+
+      const lookingFor = [context.mattress_size, context.mattress_type, context.firmness]
+        .filter(Boolean).join(', ');
+      const budget = context.budget_min || context.budget_max
+        ? `$${context.budget_min || '?'} - $${context.budget_max || '?'}`
+        : '';
+
+      await sendEmail({
+        to: notifyEmail,
+        subject: `[BedSync] Handoff needed — ${lead.customer_name || lead.phone} (Score: ${lead.lead_score})`,
+        html: buildHandoffEmailHtml({
+          businessName: dealer.business_name,
+          customerName: lead.customer_name,
+          customerPhone: lead.phone,
+          leadScore: lead.lead_score,
+          reason,
+          lookingFor,
+          budget,
+          sleepPosition: context.sleeping_position || '',
+          urgency: context.urgency || '',
+          financingInterest: !!context.financing_interest,
+          productsShown: context.recommendations_shown?.length || 0,
+          objections: context.objections?.join(', ') || '',
+          dashboardUrl,
+        }),
+        text: summary,
+      });
+    } catch (err) {
+      console.error('[Handoff] Email notification error:', err);
     }
   }
 }
