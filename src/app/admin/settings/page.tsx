@@ -36,6 +36,19 @@ export default function SettingsPage() {
   const [hoursStart, setHoursStart] = useState('09:00');
   const [hoursEnd, setHoursEnd] = useState('20:00');
 
+  type DayHours = { open: boolean; start: string; end: string };
+  const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const defaultDayHours = (): Record<string, DayHours> => ({
+    '0': { open: false, start: '09:00', end: '18:00' },
+    '1': { open: true,  start: '09:00', end: '18:00' },
+    '2': { open: true,  start: '09:00', end: '18:00' },
+    '3': { open: true,  start: '09:00', end: '18:00' },
+    '4': { open: true,  start: '09:00', end: '18:00' },
+    '5': { open: true,  start: '09:00', end: '18:00' },
+    '6': { open: true,  start: '09:00', end: '20:00' },
+  });
+  const [dayHours, setDayHours] = useState<Record<string, DayHours>>(defaultDayHours());
+
   useEffect(() => {
     authenticate();
   }, []);
@@ -86,6 +99,9 @@ export default function SettingsPage() {
         setHandoffPhone(s.handoff_phone || '');
         setHoursStart(s.business_hours_start || '09:00');
         setHoursEnd(s.business_hours_end || '20:00');
+        if (s.day_hours) {
+          setDayHours(s.day_hours as Record<string, DayHours>);
+        }
       }
     } catch (err) {
       console.error('Load settings error:', err);
@@ -115,6 +131,7 @@ export default function SettingsPage() {
             handoff_phone: handoffPhone,
             business_hours_start: hoursStart,
             business_hours_end: hoursEnd,
+            day_hours: dayHours,
           },
         }),
       });
@@ -233,25 +250,43 @@ export default function SettingsPage() {
 
         {/* Business Hours */}
         <Section title="Business Hours">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Opens</label>
-              <input
-                type="time"
-                value={hoursStart}
-                onChange={(e) => setHoursStart(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Closes</label>
-              <input
-                type="time"
-                value={hoursEnd}
-                onChange={(e) => setHoursEnd(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              />
-            </div>
+          <p className="text-xs text-gray-500 -mt-2 mb-2">The AI will only auto-reply during open hours. Toggle days closed for days your store is not open.</p>
+          <div className="space-y-2">
+            {DAY_NAMES.map((name, idx) => {
+              const key = String(idx);
+              const day = dayHours[key] || { open: true, start: '09:00', end: '18:00' };
+              return (
+                <div key={key} className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setDayHours(prev => ({ ...prev, [key]: { ...day, open: !day.open } }))}
+                    className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${day.open ? 'bg-brand-900' : 'bg-gray-300'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${day.open ? 'translate-x-5' : ''}`} />
+                  </button>
+                  <span className={`text-sm w-24 ${day.open ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>{name}</span>
+                  {day.open ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="time"
+                        value={day.start}
+                        onChange={(e) => setDayHours(prev => ({ ...prev, [key]: { ...day, start: e.target.value } }))}
+                        className="border border-gray-300 rounded px-2 py-1 text-sm"
+                      />
+                      <span className="text-gray-400 text-sm">to</span>
+                      <input
+                        type="time"
+                        value={day.end}
+                        onChange={(e) => setDayHours(prev => ({ ...prev, [key]: { ...day, end: e.target.value } }))}
+                        className="border border-gray-300 rounded px-2 py-1 text-sm"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-sm text-gray-400 italic">Closed</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Section>
 

@@ -55,13 +55,22 @@ export interface Dealer {
   updated_at: string;
 }
 
+export interface DayHours {
+  open: boolean;
+  start: string; // "HH:MM"
+  end: string;   // "HH:MM"
+}
+
 export interface DealerSettings {
   auto_reply: boolean;
   follow_up_enabled: boolean;
   follow_up_delays: number[]; // minutes: [30, 1440, 4320]
   max_follow_ups: number;
+  /** Legacy flat hours — used when day_hours is absent */
   business_hours_start: string;
   business_hours_end: string;
+  /** Per-day hours. Keys: 0=Sun, 1=Mon, …, 6=Sat */
+  day_hours?: Record<string, DayHours>;
   timezone: string;
   greeting_style: string;
   store_address: string;
