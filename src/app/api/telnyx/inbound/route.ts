@@ -88,14 +88,18 @@ export async function POST(req: NextRequest) {
     }
 
     if (!dealer) {
-      // Fall back to matching by phone number (direct dealer numbers)
-      const { data: phoneDealer } = await db
-        .from('dealers')
-        .select('*')
-        .eq('twilio_phone', to)
-        .eq('active', true)
-        .single();
-      dealer = phoneDealer;
+      // Fall back to matching by dealer's own dedicated number (not shared)
+      const sharedNumber = process.env.TELNYX_PHONE_NUMBER?.replace(/\\n/g, '').trim();
+      if (to !== sharedNumber) {
+        const { data: phoneDealer } = await db
+          .from('dealers')
+          .select('*')
+          .eq('twilio_phone', to)
+          .eq('active', true)
+          .limit(1)
+          .single();
+        if (phoneDealer) dealer = phoneDealer;
+      }
     }
 
     if (!dealer) {
