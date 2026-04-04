@@ -88,8 +88,30 @@ export async function POST(req: NextRequest) {
     }
 
     if (!dealer) {
-      console.error('[Telnyx] No dealer found for number:', to, 'keyword:', body.trim().split(/\s+/)[0]);
-      return NextResponse.json({ ok: true });
+      // No dealer match — try to match the message text against dealer names
+      const { data: allDealers } = await db.from('dealers').select('*').eq('active', true);
+
+      if (allDealers && allDealers.length > 0) {
+        const msgLower = body.toLowerCase();
+        const matched = allDealers.find((d: any) =>
+          msgLower.includes(d.business_name.toLowerCase()) ||
+          d.business_name.toLowerCase().includes(msgLower)
+        );
+
+        if (matched) {
+          dealer = matched as Dealer;
+        } else {
+          // Can't identify dealer — ask which store
+          const dealerNames = allDealers.map((d: any) => d.business_name).join(', ');
+          const { sendSms } = await import('@/lib/sms');
+          await sendSms(from, `Hey! Thanks for reaching out. Which store are you trying to reach? We work with: ${dealerNames}. Just reply with the store name!`);
+          console.log('[Telnyx] No dealer found, asked customer to identify store. From:', from);
+          return NextResponse.json({ ok: true });
+        }
+      } else {
+        console.error('[Telnyx] No active dealers found');
+        return NextResponse.json({ ok: true });
+      }
     }
 
     // Find or create lead
