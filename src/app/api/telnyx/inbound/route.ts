@@ -57,21 +57,32 @@ export async function POST(req: NextRequest) {
     }
 
     if (!dealer) {
-      // Check for keyword routing (first word of message)
-      const keyword = body.trim().split(/\s+/)[0].toUpperCase();
       const { data: allDealers } = await db
         .from('dealers')
         .select('*')
         .eq('active', true);
 
       if (allDealers) {
+        // Check keyword routing
+        const keyword = body.trim().split(/\s+/)[0].toUpperCase();
         const keywordDealer = allDealers.find((d: any) => {
           const keywords: string[] = d.settings?.routing_keywords || [];
           return keywords.map((k: string) => k.toUpperCase()).includes(keyword);
         });
-
         if (keywordDealer) {
           dealer = keywordDealer as Dealer;
+        }
+
+        // Check if message contains a dealer name
+        if (!dealer) {
+          const msgLower = body.toLowerCase().trim();
+          const nameMatch = allDealers.find((d: any) => {
+            const name = d.business_name.toLowerCase();
+            return msgLower.includes(name) || name.includes(msgLower);
+          });
+          if (nameMatch) {
+            dealer = nameMatch as Dealer;
+          }
         }
       }
     }
@@ -88,10 +99,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (!dealer) {
-      // Unknown sender — send a friendly response and log it
       const { sendSms } = await import('@/lib/sms');
-      await sendSms(from, `Hey! Thanks for reaching out. It looks like you may have the wrong number, or we need a bit more info to help. Please visit bed-sync.com or contact the store directly and they'll take great care of you!`);
-      console.log('[Telnyx] Unknown sender, no dealer match. From:', from, 'Body:', body.substring(0, 50));
+      await sendSms(from, `Hey! Thanks for texting. What mattress store are you trying to reach? Just reply with the store name and I'll connect you.`);
+      console.log('[Telnyx] Unknown sender, asked for store name. From:', from, 'Body:', body.substring(0, 50));
       return NextResponse.json({ ok: true });
     }
 
