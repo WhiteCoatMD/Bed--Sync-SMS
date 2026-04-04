@@ -76,6 +76,7 @@ export interface DealerSettings {
   store_address: string;
   store_phone: string;
   store_website: string;
+  current_promotions: string;
   financing_url: string;
   deposit_url: string;
   handoff_phone: string;

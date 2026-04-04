@@ -33,6 +33,7 @@ export default function SettingsPage() {
   const [financingUrl, setFinancingUrl] = useState('');
   const [depositUrl, setDepositUrl] = useState('');
   const [handoffPhone, setHandoffPhone] = useState('');
+  const [currentPromotions, setCurrentPromotions] = useState('');
   const [hoursStart, setHoursStart] = useState('09:00');
   const [hoursEnd, setHoursEnd] = useState('20:00');
 
@@ -97,6 +98,7 @@ export default function SettingsPage() {
         setFinancingUrl(s.financing_url || '');
         setDepositUrl(s.deposit_url || '');
         setHandoffPhone(s.handoff_phone || '');
+        setCurrentPromotions(s.current_promotions || '');
         setHoursStart(s.business_hours_start || '09:00');
         setHoursEnd(s.business_hours_end || '20:00');
         if (s.day_hours) {
@@ -129,6 +131,7 @@ export default function SettingsPage() {
             financing_url: financingUrl,
             deposit_url: depositUrl,
             handoff_phone: handoffPhone,
+            current_promotions: currentPromotions,
             business_hours_start: hoursStart,
             business_hours_end: hoursEnd,
             day_hours: dayHours,
@@ -246,6 +249,22 @@ export default function SettingsPage() {
           <Input label="Handoff Phone" value={handoffPhone} onChange={setHandoffPhone} placeholder="+1234567890" />
           <Input label="Financing URL" value={financingUrl} onChange={setFinancingUrl} placeholder="https://..." />
           <Input label="Deposit/Payment URL" value={depositUrl} onChange={setDepositUrl} placeholder="https://..." />
+        </Section>
+
+        {/* Promotions */}
+        <Section title="Current Specials & Promotions">
+          <p className="text-sm text-gray-600 -mt-2 mb-2">
+            Tell the AI about any active sales, promos, or specials. It will mention them naturally when relevant.
+          </p>
+          <div>
+            <textarea
+              value={currentPromotions}
+              onChange={(e) => setCurrentPromotions(e.target.value)}
+              placeholder={"Example:\n- Memorial Day Sale: 20% off all hybrids through May 31\n- Free adjustable base with any king purchase\n- 0% financing for 60 months on purchases over $999"}
+              rows={5}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-vertical"
+            />
+          </div>
         </Section>
 
         {/* Business Hours */}
