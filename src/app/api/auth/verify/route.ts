@@ -31,18 +31,35 @@ export async function POST(req: NextRequest) {
     }
 
     const bedsyncUserId = userData.user.id;
+    const bedsyncUser = userData.user;
 
     // Look up linked dealer
     const db = getServiceClient();
     const { data: dealer } = await db
       .from('dealers')
-      .select('id, business_name, active')
+      .select('id, business_name, active, settings')
       .eq('bedsync_user_id', bedsyncUserId)
       .eq('active', true)
       .single();
 
     if (!dealer) {
       return NextResponse.json({ error: 'No SMS account linked', bedsync_user_id: bedsyncUserId }, { status: 404 });
+    }
+
+    // Sync store info from main BedSync dashboard into dealer settings
+    const currentSettings = (dealer.settings || {}) as Record<string, unknown>;
+    const settingsUpdate: Record<string, unknown> = {};
+    if (bedsyncUser.address && bedsyncUser.address !== currentSettings.store_address) {
+      settingsUpdate.store_address = bedsyncUser.address;
+    }
+    if (bedsyncUser.phone && bedsyncUser.phone !== currentSettings.store_phone) {
+      settingsUpdate.store_phone = bedsyncUser.phone;
+    }
+
+    if (Object.keys(settingsUpdate).length > 0) {
+      const merged = { ...currentSettings, ...settingsUpdate };
+      await db.from('dealers').update({ settings: merged }).eq('id', dealer.id);
+      console.log('[Auth Verify] Synced store info from BedSync:', settingsUpdate);
     }
 
     return NextResponse.json({
