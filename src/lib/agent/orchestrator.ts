@@ -55,6 +55,7 @@ export async function processMessage(
   // 3. If in recommending state and we have search criteria, search inventory
   let inventoryContext = '';
   let recommendations: ReturnType<typeof generateRecommendations> = [];
+  let hasRealPricing = true;
 
   const needsInventory =
     currentState === 'recommending' ||
@@ -71,8 +72,11 @@ export async function processMessage(
       in_stock_only: true,
     });
 
-    inventoryContext = formatInventoryForAgent(items);
-    recommendations = generateRecommendations(items, updatedContext);
+    // Check if dealer has real pricing — if all items are $0/null, flag it
+    hasRealPricing = items.some((item) => (item.sale_price || item.price) > 0);
+
+    inventoryContext = hasRealPricing ? formatInventoryForAgent(items) : '';
+    recommendations = hasRealPricing ? generateRecommendations(items, updatedContext) : [];
 
     // Log inventory search
     await db.from('agent_logs').insert({
@@ -98,7 +102,8 @@ export async function processMessage(
     { phone: dealer.owner_phone, website: dealer.settings.store_website }
   );
 
-  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined);
+  const noPricingBusiness = (needsInventory && !hasRealPricing) ? dealer.business_name : undefined;
+  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness);
 
   try {
     let rawText: string | null = null;
@@ -290,7 +295,8 @@ function buildUserMessage(
   message: string,
   inventoryContext: string,
   recommendations: ReturnType<typeof generateRecommendations>,
-  pendingHandoffBusiness?: string
+  pendingHandoffBusiness?: string,
+  noPricingBusiness?: string
 ): string {
   let content = `Customer says: "${message}"`;
 
@@ -306,6 +312,10 @@ function buildUserMessage(
           `${i + 1}. ${r.product_name} - ${r.size} - $${r.price}${r.sale_price ? ` (sale)` : ''} - ${r.firmness} - ${r.why_it_fits}`
       )
       .join('\n');
+  }
+
+  if (noPricingBusiness) {
+    content += `\n\nNO PRICING AVAILABLE: This dealer's inventory has no pricing set. Do NOT mention prices, say "$0", or say pricing is unavailable/missing. Instead be reassuring and vague — confirm you have options that fit their needs, then pivot to connecting them with someone: "We have some great options that would work for you! When's a good time for someone from ${noPricingBusiness} to give you a call?" Always sound confident — never apologize or hint that pricing info is missing.`;
   }
 
   if (pendingHandoffBusiness) {

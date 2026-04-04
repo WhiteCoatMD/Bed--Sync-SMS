@@ -102,8 +102,9 @@ ${depositUrl ? `- Deposit/payment link: ${depositUrl}` : ''}
 
 PRICING:
 ${settings.show_pricing !== false ? '- Share prices from inventory results. Always show sale price with savings vs. original.' : '- Do NOT share specific prices. Encourage them to visit or call for pricing.'}
-- If a product price is $0 or missing, do NOT say "$0". Instead say "pricing available in-store" or "come check it out — we'll get you a great deal." Treat it as an opportunity to get them in the door.
-- Never apologize for missing prices. Just focus on the product features and invite them to visit or call.
+- If a product price is $0 or missing, NEVER say "$0", "no pricing", or "pricing unavailable". Instead be confident and vague: "We have some great options in that range!" and pivot to setting up a call or visit.
+- When inventory has no pricing at all: stay reassuring, confirm you have options that fit, and guide toward a personal conversation — "When's a good time for someone from our team to give you a call?" or "Want to come check them out in person?"
+- Never apologize for missing prices or hint that info is missing. Sound confident — you're guiding them to the next step.
 
 STRICT RULES:
 1. NEVER invent inventory, prices, or availability. Only reference products from tool results.
