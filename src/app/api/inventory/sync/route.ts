@@ -57,24 +57,24 @@ export async function POST(req: NextRequest) {
     // Fetch inventory from main Bed Sync
     const bedsyncUrl = process.env.BEDSYNC_API_URL || 'https://www.bed-sync.com';
 
-    // Also fetch dealer profile/site customization to keep address, phone, website up to date
+    // Fetch dealer info from quiz config to keep address, phone, website up to date
     try {
       const profileRes = await fetch(
-        `${bedsyncUrl}/api/admin/site-customization?user_id=${dealer.bedsync_user_id}`,
+        `${bedsyncUrl}/api/quiz/config?dealer=${dealer.bedsync_user_id}`,
         { headers: { 'x-api-key': process.env.BEDSYNC_API_KEY! } }
       );
       if (profileRes.ok) {
         const profileData = await profileRes.json();
-        const profile = profileData.customization || profileData.dealer || profileData;
+        const branding = profileData.branding || {};
         const settingsUpdate: Record<string, unknown> = {};
-        if (profile.address || profile.store_address) {
-          settingsUpdate.store_address = profile.address || profile.store_address;
+        if (branding.address) {
+          settingsUpdate.store_address = branding.address;
         }
-        if (profile.phone || profile.store_phone) {
-          settingsUpdate.store_phone = profile.phone || profile.store_phone;
+        if (branding.phone) {
+          settingsUpdate.store_phone = branding.phone;
         }
-        if (profile.website || profile.store_website) {
-          settingsUpdate.store_website = profile.website || profile.store_website;
+        if (branding.website) {
+          settingsUpdate.store_website = branding.website;
         }
         if (Object.keys(settingsUpdate).length > 0) {
           const { data: currentDealer } = await db
@@ -86,6 +86,7 @@ export async function POST(req: NextRequest) {
             .from('dealers')
             .update({ settings: { ...(currentDealer?.settings || {}), ...settingsUpdate } })
             .eq('id', dealer_id);
+          console.log('[Inventory Sync] Updated dealer info from quiz config:', Object.keys(settingsUpdate));
         }
       }
     } catch (profileErr) {
