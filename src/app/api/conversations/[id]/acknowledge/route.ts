@@ -7,15 +7,16 @@ import { getServiceClient } from '@/lib/supabase';
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const db = getServiceClient();
 
     const { error } = await db
       .from('conversations')
       .update({ handoff_acknowledged_at: new Date().toISOString() })
-      .eq('id', params.id)
+      .eq('id', id)
       .eq('status', 'handed_off'); // safety: only ack handed-off conversations
 
     if (error) {
@@ -23,7 +24,7 @@ export async function POST(
     }
 
     await db.from('agent_logs').insert({
-      conversation_id: params.id,
+      conversation_id: id,
       action: 'state_change',
       details: { event: 'handoff_acknowledged' },
     });
