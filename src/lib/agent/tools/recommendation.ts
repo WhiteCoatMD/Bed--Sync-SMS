@@ -217,11 +217,11 @@ export function formatRecommendationsForSms(
 
   const lines = recs.map((r, i) => {
     const priceStr = !r.price || r.price === 0
-      ? 'Ask for pricing'
+      ? ''
       : r.sale_price
-        ? `$${r.sale_price} (was $${r.price})`
-        : `$${r.price}`;
-    return `${i + 1}. ${r.product_name}\n   ${r.size} | ${r.firmness} | ${priceStr}\n   ${r.why_it_fits}`;
+        ? ` | $${r.sale_price} (was $${r.price})`
+        : ` | $${r.price}`;
+    return `${i + 1}. ${r.product_name}\n   ${r.size} | ${r.firmness}${priceStr}\n   ${r.why_it_fits}`;
   });
 
   return `Here are my top picks for you:\n\n${lines.join('\n\n')}\n\nWhich one catches your eye?`;
