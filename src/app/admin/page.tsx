@@ -206,7 +206,7 @@ export default function AdminDashboard() {
   };
 
   const unacknowledgedHandoffs = allConversations.filter(
-    (c) => c.status === 'handed_off' && !c.handoff_acknowledged_at
+    (c) => c.handed_off_at && !c.handoff_acknowledged_at
   );
 
   return (

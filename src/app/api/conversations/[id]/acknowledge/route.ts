@@ -13,11 +13,16 @@ export async function POST(
     const { id } = await params;
     const db = getServiceClient();
 
+    // Dealer is taking over — stop AI replies and mark acknowledged
     const { error } = await db
       .from('conversations')
-      .update({ handoff_acknowledged_at: new Date().toISOString() })
+      .update({
+        status: 'handed_off',
+        agent_state: 'handed_off',
+        handoff_acknowledged_at: new Date().toISOString(),
+      })
       .eq('id', id)
-      .eq('status', 'handed_off'); // safety: only ack handed-off conversations
+      .not('handed_off_at', 'is', null); // safety: only ack conversations with a pending handoff
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

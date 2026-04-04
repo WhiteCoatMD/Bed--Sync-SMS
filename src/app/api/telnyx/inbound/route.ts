@@ -199,8 +199,11 @@ export async function POST(req: NextRequest) {
       if (refreshed) conversation = refreshed;
     }
 
-    // If handed off, just record the message - don't auto-reply
-    if ((conversation as Conversation).status === 'handed_off') {
+    // Only stop AI replies once a human has actually acknowledged the handoff
+    if (
+      (conversation as Conversation).status === 'handed_off' &&
+      (conversation as Conversation).handoff_acknowledged_at
+    ) {
       return NextResponse.json({ ok: true });
     }
 
@@ -246,9 +249,8 @@ export async function POST(req: NextRequest) {
         ...decision.context_updates,
       };
     }
-    if (decision.should_handoff) {
-      convUpdate.status = 'handed_off';
-    }
+    // Don't set status to handed_off yet — AI keeps answering until a human acknowledges.
+    // The handoff notification (SMS + email) still fires below to alert the dealer.
     if (Object.keys(convUpdate).length > 0) {
       await db.from('conversations').update(convUpdate).eq('id', conversation.id);
     }

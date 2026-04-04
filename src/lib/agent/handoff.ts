@@ -75,12 +75,11 @@ export async function triggerHandoff(
 ): Promise<void> {
   const db = getServiceClient();
 
-  // Update conversation — handoff_acknowledged_at: null means unacknowledged
+  // Mark handoff request — but keep status active so AI continues answering.
+  // Status flips to handed_off only when a human acknowledges in the dashboard.
   await db
     .from('conversations')
     .update({
-      status: 'handed_off',
-      agent_state: 'handed_off',
       handed_off_at: new Date().toISOString(),
       handed_off_reason: reason,
       handoff_acknowledged_at: null,
@@ -88,13 +87,9 @@ export async function triggerHandoff(
     })
     .eq('id', conversation.id);
 
-  // Update lead status
-  await db
-    .from('leads')
-    .update({ status: 'handed_off' })
-    .eq('id', conversation.lead_id);
+  // Don't update lead status yet — AI keeps going until human takes over
 
-  // Cancel pending follow-ups
+  // Cancel pending follow-ups (dealer is being notified)
   await db
     .from('follow_ups')
     .update({ status: 'cancelled' })
