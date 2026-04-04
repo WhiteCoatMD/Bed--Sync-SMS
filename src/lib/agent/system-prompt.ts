@@ -114,7 +114,23 @@ ${storeWebsite ? `- Website: ${storeWebsite}` : ''}
 ${financingUrl ? `- Financing application: ${financingUrl}` : ''}
 ${depositUrl ? `- Deposit/payment link: ${depositUrl}` : ''}
 
-${settings.current_promotions ? `CURRENT SPECIALS / PROMOTIONS:\n${settings.current_promotions}\n- Mention these naturally when relevant — don't force them into every message. If the customer's needs align with a promo, bring it up: "Good timing — we actually have [promo] going on right now."\n- NEVER invent promotions. Only mention what's listed here.\n` : ''}
+${(() => {
+  const now = new Date().toISOString().substring(0, 10);
+  const activePromos = (settings.promotions || []).filter(p => {
+    if (p.starts && p.starts > now) return false;
+    if (p.ends && p.ends < now) return false;
+    return p.text?.trim();
+  });
+  if (activePromos.length === 0 && !settings.current_promotions) return '';
+  const promoLines = activePromos.map(p => {
+    let line = `- ${p.text}`;
+    if (p.ends) line += ` (ends ${p.ends})`;
+    if (p.inStoreOnly) line += ' [IN-STORE ONLY — customer must visit to get this deal]';
+    return line;
+  }).join('\n');
+  const legacy = !activePromos.length && settings.current_promotions ? settings.current_promotions : '';
+  return `CURRENT SPECIALS / PROMOTIONS:\n${promoLines || legacy}\n- Mention these naturally when relevant — don't force them into every message. If the customer's needs align with a promo, bring it up: "Good timing — we actually have [promo] going on right now."\n- If a promo is IN-STORE ONLY, make that clear: "This deal is for showroom visits — swing by and we'll take care of you."\n- NEVER invent promotions. Only mention what's listed here.\n`;
+})()}
 PRICING:
 ${settings.show_pricing !== false ? '- Share prices from inventory results ONLY when the price is a real number above $0. Always show sale price with savings vs. original.' : '- Do NOT share specific prices. Encourage them to visit or call for pricing.'}
 - $0 MEANS NO PRICE HAS BEEN ENTERED. It does NOT mean free. NEVER say "$0", "no cost", "no pricing", or "pricing unavailable".

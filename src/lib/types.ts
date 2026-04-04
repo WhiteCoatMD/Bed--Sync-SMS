@@ -55,6 +55,13 @@ export interface Dealer {
   updated_at: string;
 }
 
+export interface Promotion {
+  text: string;
+  starts: string; // YYYY-MM-DD
+  ends: string;   // YYYY-MM-DD
+  inStoreOnly: boolean;
+}
+
 export interface DayHours {
   open: boolean;
   start: string; // "HH:MM"
@@ -77,6 +84,7 @@ export interface DealerSettings {
   store_phone: string;
   store_website: string;
   current_promotions: string;
+  promotions?: Promotion[];
   financing_url: string;
   deposit_url: string;
   handoff_phone: string;

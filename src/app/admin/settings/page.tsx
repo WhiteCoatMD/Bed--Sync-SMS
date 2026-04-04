@@ -34,6 +34,8 @@ export default function SettingsPage() {
   const [depositUrl, setDepositUrl] = useState('');
   const [handoffPhone, setHandoffPhone] = useState('');
   const [currentPromotions, setCurrentPromotions] = useState('');
+  type Promo = { text: string; starts: string; ends: string; inStoreOnly: boolean };
+  const [promos, setPromos] = useState<Promo[]>([]);
   const [hoursStart, setHoursStart] = useState('09:00');
   const [hoursEnd, setHoursEnd] = useState('20:00');
 
@@ -99,6 +101,9 @@ export default function SettingsPage() {
         setDepositUrl(s.deposit_url || '');
         setHandoffPhone(s.handoff_phone || '');
         setCurrentPromotions(s.current_promotions || '');
+        if (s.promotions && Array.isArray(s.promotions)) {
+          setPromos(s.promotions as Promo[]);
+        }
         setHoursStart(s.business_hours_start || '09:00');
         setHoursEnd(s.business_hours_end || '20:00');
         if (s.day_hours) {
@@ -132,6 +137,7 @@ export default function SettingsPage() {
             deposit_url: depositUrl,
             handoff_phone: handoffPhone,
             current_promotions: currentPromotions,
+            promotions: promos.filter(p => p.text.trim()),
             business_hours_start: hoursStart,
             business_hours_end: hoursEnd,
             day_hours: dayHours,
@@ -253,18 +259,64 @@ export default function SettingsPage() {
 
         {/* Promotions */}
         <Section title="Current Specials & Promotions">
-          <p className="text-sm text-gray-600 -mt-2 mb-2">
-            Tell the AI about any active sales, promos, or specials. It will mention them naturally when relevant.
+          <p className="text-sm text-gray-600 -mt-2 mb-3">
+            Add your active sales and specials. The AI will mention them naturally when relevant. Remove old promos when they expire.
           </p>
-          <div>
-            <textarea
-              value={currentPromotions}
-              onChange={(e) => setCurrentPromotions(e.target.value)}
-              placeholder={"Example:\n- Memorial Day Sale: 20% off all hybrids through May 31\n- Free adjustable base with any king purchase\n- 0% financing for 60 months on purchases over $999"}
-              rows={5}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-vertical"
-            />
-          </div>
+          {promos.map((promo, idx) => (
+            <div key={idx} className="bg-gray-50 rounded-lg p-3 mb-3 border border-gray-200">
+              <div className="flex items-start gap-2 mb-2">
+                <textarea
+                  value={promo.text}
+                  onChange={(e) => { const p = [...promos]; p[idx] = { ...p[idx], text: e.target.value }; setPromos(p); }}
+                  placeholder="e.g., 20% off all hybrids — showroom only"
+                  rows={2}
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setPromos(promos.filter((_, i) => i !== idx))}
+                  className="text-red-400 hover:text-red-600 text-lg px-1"
+                  title="Remove"
+                >×</button>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs text-gray-500">Starts</label>
+                  <input
+                    type="date"
+                    value={promo.starts}
+                    onChange={(e) => { const p = [...promos]; p[idx] = { ...p[idx], starts: e.target.value }; setPromos(p); }}
+                    className="border border-gray-300 rounded px-2 py-1 text-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs text-gray-500">Ends</label>
+                  <input
+                    type="date"
+                    value={promo.ends}
+                    onChange={(e) => { const p = [...promos]; p[idx] = { ...p[idx], ends: e.target.value }; setPromos(p); }}
+                    className="border border-gray-300 rounded px-2 py-1 text-sm"
+                  />
+                </div>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={promo.inStoreOnly}
+                    onChange={(e) => { const p = [...promos]; p[idx] = { ...p[idx], inStoreOnly: e.target.checked }; setPromos(p); }}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-xs text-gray-600">In-store only</span>
+                </label>
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setPromos([...promos, { text: '', starts: '', ends: '', inStoreOnly: false }])}
+            className="text-sm text-brand-900 font-medium hover:underline"
+          >
+            + Add Promotion
+          </button>
         </Section>
 
         {/* Business Hours */}
