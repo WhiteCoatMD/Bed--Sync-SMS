@@ -209,32 +209,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    const settings = (dealer as Dealer).settings;
-    const isNewConversation = (conversation as Conversation).message_count <= 1;
-
-    // After-hours auto-reply
-    if (settings.after_hours_reply !== false && !isWithinBusinessHours(settings)) {
-      const afterHoursMsg = settings.after_hours_message ||
-        `Thanks for texting ${(dealer as Dealer).business_name}! We're closed right now but we'll get back to you first thing in the morning. In the meantime, feel free to browse our inventory at our website!`;
-
-      if (isNewConversation) {
-        await sendAndTrack(
-          dealer.id,
-          conversation.id,
-          from,
-          afterHoursMsg,
-          'agent'
-        );
-
-        await db.from('agent_logs').insert({
-          conversation_id: conversation.id,
-          action: 'after_hours_reply',
-          details: { message: afterHoursMsg },
-        });
-      }
-
-      return NextResponse.json({ ok: true });
-    }
+    // AI always responds — business hours only affect handoff urgency, not availability
 
     // Get conversation history
     const { data: messages } = await db
