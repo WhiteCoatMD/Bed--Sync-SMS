@@ -56,6 +56,7 @@ export async function processMessage(
   let inventoryContext = '';
   let recommendations: ReturnType<typeof generateRecommendations> = [];
   let hasRealPricing = true;
+  let recommendationImageUrls: string[] = [];
 
   const needsInventory =
     currentState === 'recommending' ||
@@ -77,6 +78,15 @@ export async function processMessage(
 
     inventoryContext = hasRealPricing ? formatInventoryForAgent(items) : '';
     recommendations = hasRealPricing ? generateRecommendations(items, updatedContext) : [];
+
+    // Collect image URLs from recommended items for MMS
+    if (recommendations.length > 0) {
+      const recIds = new Set(recommendations.map(r => r.inventory_id));
+      recommendationImageUrls = items
+        .filter(item => recIds.has(item.id) && item.image_url)
+        .map(item => item.image_url!)
+        .slice(0, 3); // Telnyx MMS limit
+    }
 
     // Log inventory search
     await db.from('agent_logs').insert({
@@ -179,6 +189,11 @@ export async function processMessage(
       handoff_reason?: string;
       lead_score_delta?: number;
       agent_note?: string;
+      schedule_appointment?: {
+        type: 'showroom_visit' | 'phone_call';
+        datetime: string; // ISO or natural language date
+        notes?: string;
+      };
     };
 
     // Merge LLM context updates with our extracted signals
@@ -213,6 +228,31 @@ export async function processMessage(
         ...(updatedContext.recommendations_shown || []),
         ...recommendations.map((r) => r.inventory_id),
       ];
+    }
+
+    // Create appointment if AI scheduled one
+    if (parsed.schedule_appointment) {
+      try {
+        const appt = parsed.schedule_appointment;
+        await db.from('appointments').insert({
+          dealer_id: dealer.id,
+          conversation_id: conversation.id,
+          lead_id: lead.id,
+          type: appt.type || 'showroom_visit',
+          scheduled_at: appt.datetime,
+          duration_minutes: appt.type === 'phone_call' ? 15 : 30,
+          status: 'scheduled',
+          notes: appt.notes || null,
+          created_by: 'agent',
+        });
+        await db.from('agent_logs').insert({
+          conversation_id: conversation.id,
+          action: 'tool_call',
+          details: { tool: 'schedule_appointment', ...appt },
+        });
+      } catch (apptErr) {
+        console.error('[Agent] Appointment creation error:', apptErr);
+      }
     }
 
     // Log agent action
@@ -252,6 +292,7 @@ export async function processMessage(
 
     return {
       reply: parsed.reply || "I'm sorry, could you say that again?",
+      media_urls: recommendationImageUrls.length > 0 ? recommendationImageUrls : undefined,
       new_state: handoffCheck.handoff ? 'handed_off' : newState,
       context_updates: allContextUpdates,
       qualification_updates: {

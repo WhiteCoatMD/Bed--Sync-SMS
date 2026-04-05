@@ -248,13 +248,14 @@ export async function POST(req: NextRequest) {
       recentMessages: (messages || []) as Message[],
     });
 
-    // Send reply
+    // Send reply (MMS if images available)
     await sendAndTrack(
       dealer.id,
       conversation.id,
       from,
       decision.reply,
-      'agent'
+      'agent',
+      decision.media_urls
     );
 
     // Update conversation

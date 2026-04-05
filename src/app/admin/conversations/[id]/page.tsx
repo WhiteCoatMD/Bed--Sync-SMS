@@ -19,6 +19,10 @@ interface ConversationDetail {
   context: Record<string, unknown>;
   follow_up_count: number;
   handed_off_reason: string | null;
+  outcome: 'won' | 'lost' | null;
+  outcome_details: string | null;
+  outcome_product: string | null;
+  outcome_at: string | null;
   message_count: number;
   created_at: string;
   updated_at: string;
@@ -75,6 +79,9 @@ export default function ConversationDetailPage() {
   const [manualMessage, setManualMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [outcomeDetails, setOutcomeDetails] = useState('');
+  const [outcomeProduct, setOutcomeProduct] = useState('');
+  const [savingOutcome, setSavingOutcome] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -131,6 +138,35 @@ export default function ConversationDetailPage() {
     setSending(false);
     fetchDetail();
     inputRef.current?.focus();
+  }
+
+  async function handleOutcome(outcome: 'won' | 'lost') {
+    setSavingOutcome(true);
+    await fetch(`/api/conversations/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        outcome,
+        outcome_details: outcomeDetails || null,
+        outcome_product: outcome === 'won' ? (outcomeProduct || null) : null,
+        status: 'closed',
+      }),
+    });
+    setSavingOutcome(false);
+    fetchDetail();
+  }
+
+  async function handleClearOutcome() {
+    setSavingOutcome(true);
+    await fetch(`/api/conversations/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ outcome: null, outcome_details: null, outcome_product: null }),
+    });
+    setOutcomeDetails('');
+    setOutcomeProduct('');
+    setSavingOutcome(false);
+    fetchDetail();
   }
 
   if (loading) return <div className="text-center py-12 text-gray-400">Loading...</div>;
@@ -434,6 +470,70 @@ export default function ConversationDetailPage() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Outcome Tracking */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <h3 className="font-semibold text-sm mb-3">Outcome</h3>
+            {data.outcome ? (
+              <div>
+                <div className={`flex items-center gap-2 mb-2 ${data.outcome === 'won' ? 'text-green-700' : 'text-red-600'}`}>
+                  <span className="text-lg">{data.outcome === 'won' ? '🎉' : '😔'}</span>
+                  <span className="font-bold text-sm">{data.outcome === 'won' ? 'Won — Purchased!' : 'Lost'}</span>
+                </div>
+                {data.outcome_product && (
+                  <p className="text-xs text-gray-600 mb-1">Product: <span className="font-medium">{data.outcome_product}</span></p>
+                )}
+                {data.outcome_details && (
+                  <p className="text-xs text-gray-500 mb-2">{data.outcome_details}</p>
+                )}
+                {data.outcome_at && (
+                  <p className="text-[10px] text-gray-400 mb-2">
+                    {new Date(data.outcome_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </p>
+                )}
+                <button
+                  onClick={handleClearOutcome}
+                  disabled={savingOutcome}
+                  className="text-xs text-gray-400 hover:text-gray-600 underline"
+                >
+                  Clear outcome
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={outcomeProduct}
+                  onChange={(e) => setOutcomeProduct(e.target.value)}
+                  placeholder="What did they buy? (optional)"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs"
+                />
+                <input
+                  type="text"
+                  value={outcomeDetails}
+                  onChange={(e) => setOutcomeDetails(e.target.value)}
+                  placeholder="Notes (optional)"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleOutcome('won')}
+                    disabled={savingOutcome}
+                    className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50 transition"
+                  >
+                    Won
+                  </button>
+                  <button
+                    onClick={() => handleOutcome('lost')}
+                    disabled={savingOutcome}
+                    className="flex-1 px-3 py-2 bg-red-500 text-white rounded-lg text-xs font-medium hover:bg-red-600 disabled:opacity-50 transition"
+                  >
+                    Lost
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Agent Log (collapsible) */}

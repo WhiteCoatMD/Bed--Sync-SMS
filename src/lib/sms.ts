@@ -6,19 +6,26 @@ const TELNYX_MESSAGING_PROFILE_ID = process.env.TELNYX_MESSAGING_PROFILE_ID;
 export async function sendSms(
   to: string,
   body: string,
-  from?: string
+  from?: string,
+  mediaUrls?: string[]
 ): Promise<string | null> {
   const fromNumber = from || process.env.TELNYX_PHONE_NUMBER!;
 
   try {
-    console.log(`[SMS] Sending from ${fromNumber} to ${formatPhone(to)}: ${body.substring(0, 50)}...`);
-    const data = await telnyxRequest('/messages', 'POST', {
+    const isMms = mediaUrls && mediaUrls.length > 0;
+    console.log(`[${isMms ? 'MMS' : 'SMS'}] Sending from ${fromNumber} to ${formatPhone(to)}: ${body.substring(0, 50)}...`);
+    const payload: Record<string, unknown> = {
       from: fromNumber,
       to: formatPhone(to),
       text: body,
       ...(TELNYX_MESSAGING_PROFILE_ID ? { messaging_profile_id: TELNYX_MESSAGING_PROFILE_ID } : {}),
-    });
-    console.log(`[SMS] Sent successfully: ${data.data?.id}`);
+    };
+    if (isMms) {
+      payload.media_urls = mediaUrls;
+      payload.type = 'MMS';
+    }
+    const data = await telnyxRequest('/messages', 'POST', payload);
+    console.log(`[${isMms ? 'MMS' : 'SMS'}] Sent successfully: ${data.data?.id}`);
     return data.data?.id || null;
   } catch (err: any) {
     console.error('[SMS] Send error:', err?.message || err);
@@ -35,7 +42,8 @@ export async function sendAndTrack(
   conversationId: string,
   to: string,
   body: string,
-  sender: 'agent' | 'human' = 'agent'
+  sender: 'agent' | 'human' = 'agent',
+  mediaUrls?: string[]
 ): Promise<string | null> {
   const db = getServiceClient();
 
@@ -47,7 +55,7 @@ export async function sendAndTrack(
     .single();
 
   const fromNumber = dealer?.twilio_phone || process.env.TELNYX_PHONE_NUMBER;
-  const messageId = await sendSms(to, body, fromNumber || undefined);
+  const messageId = await sendSms(to, body, fromNumber || undefined, mediaUrls);
 
   // Record message
   await db.from('messages').insert({
@@ -55,7 +63,8 @@ export async function sendAndTrack(
     direction: 'outbound',
     sender,
     body,
-    twilio_sid: messageId, // Keep field name for backward compat
+    twilio_sid: messageId,
+    metadata: mediaUrls?.length ? { media_urls: mediaUrls } : {},
   });
 
   // Update conversation message count

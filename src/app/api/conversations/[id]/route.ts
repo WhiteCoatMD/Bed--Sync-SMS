@@ -66,6 +66,51 @@ export async function GET(
 }
 
 /**
+ * PATCH /api/conversations/[id]
+ * Update conversation outcome (win/loss tracking).
+ */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await req.json();
+    const db = getServiceClient();
+
+    const update: Record<string, unknown> = {};
+
+    if (body.outcome !== undefined) {
+      update.outcome = body.outcome; // 'won' | 'lost' | null
+      update.outcome_at = body.outcome ? new Date().toISOString() : null;
+    }
+    if (body.outcome_details !== undefined) update.outcome_details = body.outcome_details;
+    if (body.outcome_product !== undefined) update.outcome_product = body.outcome_product;
+    if (body.status !== undefined) update.status = body.status;
+
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
+    }
+
+    const { error } = await db.from('conversations').update(update).eq('id', id);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    await db.from('agent_logs').insert({
+      conversation_id: id,
+      action: 'state_change',
+      details: { event: 'outcome_updated', ...update },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error('[Conversation Update] Error:', err);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+/**
  * POST /api/conversations/[id]
  * Send a manual SMS from the admin (human sender).
  */

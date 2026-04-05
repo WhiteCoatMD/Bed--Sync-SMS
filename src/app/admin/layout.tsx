@@ -8,6 +8,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const navItems = [
     { href: '/admin', label: 'Conversations' },
+    { href: '/admin/appointments', label: 'Appointments' },
     { href: '/admin/settings', label: 'Settings' },
   ];
 

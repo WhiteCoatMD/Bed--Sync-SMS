@@ -136,6 +136,10 @@ export interface Conversation {
   handed_off_at: string | null;
   handed_off_reason: string | null;
   handoff_acknowledged_at: string | null;
+  outcome: 'won' | 'lost' | null;
+  outcome_details: string | null;
+  outcome_product: string | null;
+  outcome_at: string | null;
   closed_at: string | null;
   message_count: number;
   created_at: string;
@@ -190,6 +194,7 @@ export interface InventoryItem {
   description: string | null;
   financing_eligible: boolean;
   promotion: string | null;
+  image_url: string | null;
   sku: string | null;
   building_serial: string | null;
   created_at: string;
@@ -214,6 +219,21 @@ export interface AgentLog {
   action: AgentLogAction;
   details: Record<string, unknown>;
   created_at: string;
+}
+
+export interface Appointment {
+  id: string;
+  conversation_id: string;
+  dealer_id: string;
+  lead_id: string;
+  type: 'showroom_visit' | 'phone_call' | 'delivery' | 'other';
+  scheduled_at: string;
+  duration_minutes: number;
+  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no_show';
+  notes: string | null;
+  created_by: 'agent' | 'human';
+  created_at: string;
+  updated_at: string;
 }
 
 export interface FollowUp {
@@ -258,6 +278,7 @@ export interface ProductRecommendation {
 
 export interface AgentDecision {
   reply: string;
+  media_urls?: string[];
   new_state?: AgentState;
   context_updates?: Partial<ConversationContext>;
   qualification_updates?: Partial<QualificationData>;

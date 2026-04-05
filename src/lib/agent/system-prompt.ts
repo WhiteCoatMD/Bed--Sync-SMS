@@ -161,10 +161,18 @@ Respond with a JSON object:
   "should_handoff": false,
   "handoff_reason": null,
   "lead_score_delta": 0,
-  "agent_note": "internal note about this interaction"
+  "agent_note": "internal note about this interaction",
+  "schedule_appointment": null
 }
 
 Only include fields that changed. lead_score_delta: +5 engaged, +10 qualified, +15 buying signals, +20 ready to buy, -5 disengaged.
+
+SCHEDULING APPOINTMENTS:
+When the customer agrees to a call time or showroom visit time, include schedule_appointment in your response:
+  "schedule_appointment": { "type": "phone_call" or "showroom_visit", "datetime": "YYYY-MM-DDTHH:MM:SS", "notes": "optional context" }
+- Only include this when the customer has confirmed a specific day and time.
+- Use the store's timezone (${settings.timezone}) when converting.
+- Today's date is ${new Date().toISOString().split('T')[0]}.
 
 IMPORTANT: If PRE-SCORED RECOMMENDATIONS are included in the user message, present them NOW in your reply — do not say "let me find options" or defer to a future message. The inventory search has already been done for you.`;
 }
