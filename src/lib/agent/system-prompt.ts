@@ -1,4 +1,5 @@
 import type { DealerSettings, ConversationContext, AgentState } from '../types';
+import { formatHoursForPrompt } from '../business-hours';
 
 export interface DealerInfo {
   phone?: string | null;
@@ -113,6 +114,11 @@ ${storePhone ? `- Phone: ${storePhone}` : ''}
 ${storeWebsite ? `- Website: ${storeWebsite}` : ''}
 ${financingUrl ? `- Financing application: ${financingUrl}` : ''}
 ${depositUrl ? `- Deposit/payment link: ${depositUrl}` : ''}
+
+BUSINESS HOURS (only schedule appointments during these times):
+${formatHoursForPrompt(settings)}
+- NEVER schedule an appointment on a day the store is closed or outside open hours.
+- If the customer requests a time when the store is closed, suggest the next available open time instead.
 
 ${(() => {
   const now = new Date().toISOString().substring(0, 10);

@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { getServiceClient } from '../supabase';
 import { buildSystemPrompt } from './system-prompt';
 import { canTransition, shouldAutoHandoff, checkHotLeadAlert } from './state-machine';
+import { isDatetimeWithinHours } from '../business-hours';
 import { searchInventory, formatInventoryForAgent } from './tools/inventory-search';
 import { generateRecommendations, formatRecommendationsForSms } from './tools/recommendation';
 import { extractQualificationSignals, mergeContext } from './tools/qualification';
@@ -230,26 +231,37 @@ export async function processMessage(
       ];
     }
 
-    // Create appointment if AI scheduled one
+    // Create appointment if AI scheduled one — validate it's within business hours
     if (parsed.schedule_appointment) {
       try {
         const appt = parsed.schedule_appointment;
-        await db.from('appointments').insert({
-          dealer_id: dealer.id,
-          conversation_id: conversation.id,
-          lead_id: lead.id,
-          type: appt.type || 'showroom_visit',
-          scheduled_at: appt.datetime,
-          duration_minutes: appt.type === 'phone_call' ? 15 : 30,
-          status: 'scheduled',
-          notes: appt.notes || null,
-          created_by: 'agent',
-        });
-        await db.from('agent_logs').insert({
-          conversation_id: conversation.id,
-          action: 'tool_call',
-          details: { tool: 'schedule_appointment', ...appt },
-        });
+        const withinHours = isDatetimeWithinHours(appt.datetime, dealer.settings);
+
+        if (withinHours) {
+          await db.from('appointments').insert({
+            dealer_id: dealer.id,
+            conversation_id: conversation.id,
+            lead_id: lead.id,
+            type: appt.type || 'showroom_visit',
+            scheduled_at: appt.datetime,
+            duration_minutes: appt.type === 'phone_call' ? 15 : 30,
+            status: 'scheduled',
+            notes: appt.notes || null,
+            created_by: 'agent',
+          });
+          await db.from('agent_logs').insert({
+            conversation_id: conversation.id,
+            action: 'tool_call',
+            details: { tool: 'schedule_appointment', ...appt, validated: true },
+          });
+        } else {
+          console.warn('[Agent] Appointment rejected — outside business hours:', appt.datetime);
+          await db.from('agent_logs').insert({
+            conversation_id: conversation.id,
+            action: 'tool_call',
+            details: { tool: 'schedule_appointment', ...appt, rejected: 'outside_business_hours' },
+          });
+        }
       } catch (apptErr) {
         console.error('[Agent] Appointment creation error:', apptErr);
       }
