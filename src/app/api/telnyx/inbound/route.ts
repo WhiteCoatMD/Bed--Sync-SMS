@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       .or(`phone.eq.${from},phone.eq.${cleanFromPhone},phone.eq.+1${cleanFromPhone}`)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     let dealer: Dealer | null = null;
 
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
         .select('*')
         .eq('id', existingLead.dealer_id)
         .eq('active', true)
-        .single();
+        .maybeSingle();
       dealer = existingDealer;
     }
 
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
           .eq('twilio_phone', to)
           .eq('active', true)
           .limit(1)
-          .single();
+          .maybeSingle();
         if (phoneDealer) dealer = phoneDealer;
       }
     }
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
       .select('*')
       .eq('dealer_id', dealer.id)
       .or(`phone.eq.${from},phone.eq.${cleanPhone},phone.eq.+1${cleanPhone}`)
-      .single();
+      .maybeSingle();
 
     if (!lead) {
       const { data: newLead } = await db
@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
           status: 'new',
         })
         .select()
-        .single();
+        .maybeSingle();
       lead = newLead;
     }
 
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
       .in('status', ['active', 'follow_up', 'paused', 'handed_off'])
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (!conversation) {
       const { data: newConv } = await db
@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
           agent_state: 'greeting',
         })
         .select()
-        .single();
+        .maybeSingle();
       conversation = newConv;
     }
 
@@ -212,7 +212,7 @@ export async function POST(req: NextRequest) {
         .from('conversations')
         .select('*')
         .eq('id', conversation.id)
-        .single();
+        .maybeSingle();
       if (refreshed) conversation = refreshed;
     }
 
