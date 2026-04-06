@@ -103,6 +103,60 @@ export async function POST(req: NextRequest) {
     }
 
     if (!dealer) {
+      // Check if this is an outreach prospect (MBA dealer, etc.) replying
+      const { data: prospect } = await db
+        .from('outreach_prospects')
+        .select('*')
+        .or(`phone.eq.${from},phone.eq.${cleanFromPhone},phone.eq.+1${cleanFromPhone}`)
+        .maybeSingle();
+
+      if (prospect) {
+        // Log the reply on the prospect record
+        await db
+          .from('outreach_prospects')
+          .update({
+            status: prospect.status === 'opted_out' ? 'opted_out' : 'replied',
+            last_reply: body,
+            last_reply_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', prospect.id);
+
+        // Handle STOP opt-out
+        if (body.trim().toUpperCase() === 'STOP') {
+          await db
+            .from('outreach_prospects')
+            .update({ status: 'opted_out', updated_at: new Date().toISOString() })
+            .eq('id', prospect.id);
+          const { sendSms } = await import('@/lib/sms');
+          await sendSms(from, 'You have been unsubscribed and will not receive further messages.');
+          console.log('[Outreach] Prospect opted out:', prospect.business_name, from);
+          return NextResponse.json({ ok: true });
+        }
+
+        // Notify Mitch via email about the reply
+        try {
+          const notifyRes = await fetch(`${process.env.BEDSYNC_API_URL || 'https://bed-sync.com'}/api/super-admin/outreach-reply-notify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prospect_id: prospect.id,
+              prospect_name: prospect.name,
+              business_name: prospect.business_name,
+              phone: from,
+              reply: body,
+              secret: process.env.INTERNAL_API_SECRET,
+            }),
+          });
+          console.log('[Outreach] Notified BedSync of prospect reply:', notifyRes.status);
+        } catch (notifyErr) {
+          console.error('[Outreach] Failed to notify BedSync:', notifyErr);
+        }
+
+        console.log('[Outreach] Prospect replied:', prospect.business_name, from, body.substring(0, 100));
+        return NextResponse.json({ ok: true });
+      }
+
       const { sendSms } = await import('@/lib/sms');
       await sendSms(from, `Hey! Thanks for texting. What mattress store are you trying to reach? Just reply with the store name and I'll connect you.`);
       console.log('[Telnyx] Unknown sender, asked for store name. From:', from, 'Body:', body.substring(0, 50));
