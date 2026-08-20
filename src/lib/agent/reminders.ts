@@ -44,12 +44,12 @@ export async function processPendingReminders(): Promise<number> {
   const reminded = new Set(
     (logs || [])
       .filter((l: any) => l.details && l.details.tool === 'appointment_reminder')
-      .map((l: any) => `${l.details.appointment_id}|${l.details.scheduled_at}`)
+      .map((l: any) => `${l.details.appointment_id}|${new Date(l.details.scheduled_at).toISOString()}`)
   );
 
   let sent = 0;
   for (const a of appts as any[]) {
-    if (reminded.has(`${a.id}|${a.scheduled_at}`)) continue;
+    if (reminded.has(`${a.id}|${new Date(a.scheduled_at).toISOString()}`)) continue;
     const conv = a.conversation;
     const dealer = a.dealer;
     if (!conv || conv.status === 'closed' || conv.status === 'handed_off') continue;
@@ -71,7 +71,7 @@ export async function processPendingReminders(): Promise<number> {
       const { error: logErr } = await db.from('agent_logs').insert({
         conversation_id: a.conversation_id,
         action: 'tool_call',
-        details: { tool: 'appointment_reminder', appointment_id: a.id, scheduled_at: a.scheduled_at },
+        details: { tool: 'appointment_reminder', appointment_id: a.id, scheduled_at: new Date(a.scheduled_at).toISOString() },
       });
       if (logErr) console.error('[Reminders] dedup log failed:', logErr.message);
       sent++;
