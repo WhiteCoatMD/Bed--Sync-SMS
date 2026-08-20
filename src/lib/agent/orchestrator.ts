@@ -191,9 +191,10 @@ export async function processMessage(
       lead_score_delta?: number;
       agent_note?: string;
       schedule_appointment?: {
-        type: 'showroom_visit' | 'phone_call';
-        datetime: string; // ISO or natural language date
+        type?: 'showroom_visit' | 'phone_call';
+        datetime?: string; // ISO datetime for book/reschedule
         notes?: string;
+        cancel?: boolean; // true to cancel the existing appointment
       };
     };
 
@@ -231,39 +232,77 @@ export async function processMessage(
       ];
     }
 
-    // Create appointment if AI scheduled one — validate it's within business hours
+    // Book / reschedule / cancel an appointment based on the AI's output.
     if (parsed.schedule_appointment) {
       try {
         const appt = parsed.schedule_appointment;
-        const withinHours = isDatetimeWithinHours(appt.datetime, dealer.settings);
+        const nowIso = new Date().toISOString();
 
-        if (withinHours) {
-          await db.from('appointments').insert({
-            dealer_id: dealer.id,
-            conversation_id: conversation.id,
-            lead_id: lead.id,
-            type: appt.type || 'showroom_visit',
-            scheduled_at: appt.datetime,
-            duration_minutes: appt.type === 'phone_call' ? 15 : 30,
-            status: 'scheduled',
-            notes: appt.notes || null,
-            created_by: 'agent',
-          });
-          await db.from('agent_logs').insert({
-            conversation_id: conversation.id,
-            action: 'tool_call',
-            details: { tool: 'schedule_appointment', ...appt, validated: true },
-          });
-        } else {
-          console.warn('[Agent] Appointment rejected — outside business hours:', appt.datetime);
-          await db.from('agent_logs').insert({
-            conversation_id: conversation.id,
-            action: 'tool_call',
-            details: { tool: 'schedule_appointment', ...appt, rejected: 'outside_business_hours' },
-          });
+        // Existing upcoming appointment for this conversation (if any)
+        const { data: existingRows } = await db
+          .from('appointments')
+          .select('id, scheduled_at, type')
+          .eq('conversation_id', conversation.id)
+          .in('status', ['scheduled', 'confirmed'])
+          .gt('scheduled_at', nowIso)
+          .order('scheduled_at', { ascending: true })
+          .limit(1);
+        const current = existingRows && existingRows[0];
+
+        if (appt.cancel) {
+          // Cancel their existing appointment
+          if (current) {
+            await db.from('appointments').update({ status: 'cancelled', updated_at: nowIso }).eq('id', current.id);
+            await db.from('agent_logs').insert({
+              conversation_id: conversation.id, action: 'tool_call',
+              details: { tool: 'cancel_appointment', appointment_id: current.id },
+            });
+          }
+        } else if (appt.datetime) {
+          const withinHours = isDatetimeWithinHours(appt.datetime, dealer.settings);
+          if (!withinHours) {
+            console.warn('[Agent] Appointment rejected — outside business hours:', appt.datetime);
+            await db.from('agent_logs').insert({
+              conversation_id: conversation.id, action: 'tool_call',
+              details: { tool: 'schedule_appointment', ...appt, rejected: 'outside_business_hours' },
+            });
+          } else if (current) {
+            // Reschedule: update the existing appointment. The new scheduled_at
+            // means the reminder job will send a fresh reminder for the new time.
+            const upd: Record<string, unknown> = {
+              scheduled_at: appt.datetime,
+              type: appt.type || current.type,
+              duration_minutes: appt.type === 'phone_call' ? 15 : 30,
+              status: 'scheduled',
+              updated_at: nowIso,
+            };
+            if (appt.notes) upd.notes = appt.notes;
+            await db.from('appointments').update(upd).eq('id', current.id);
+            await db.from('agent_logs').insert({
+              conversation_id: conversation.id, action: 'tool_call',
+              details: { tool: 'reschedule_appointment', appointment_id: current.id, ...appt },
+            });
+          } else {
+            // New booking
+            await db.from('appointments').insert({
+              dealer_id: dealer.id,
+              conversation_id: conversation.id,
+              lead_id: lead.id,
+              type: appt.type || 'showroom_visit',
+              scheduled_at: appt.datetime,
+              duration_minutes: appt.type === 'phone_call' ? 15 : 30,
+              status: 'scheduled',
+              notes: appt.notes || null,
+              created_by: 'agent',
+            });
+            await db.from('agent_logs').insert({
+              conversation_id: conversation.id, action: 'tool_call',
+              details: { tool: 'schedule_appointment', ...appt, validated: true },
+            });
+          }
         }
       } catch (apptErr) {
-        console.error('[Agent] Appointment creation error:', apptErr);
+        console.error('[Agent] Appointment op error:', apptErr);
       }
     }
 

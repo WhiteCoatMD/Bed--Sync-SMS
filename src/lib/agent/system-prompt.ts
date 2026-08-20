@@ -180,5 +180,10 @@ When the customer agrees to a call time or showroom visit time, include schedule
 - Use the store's timezone (${settings.timezone}) when converting.
 - Today's date is ${new Date().toISOString().split('T')[0]}.
 
+CHANGING AN APPOINTMENT:
+- If the customer wants to MOVE/RESCHEDULE their appointment, include schedule_appointment with the NEW "datetime" (and "type" if it changed). The system updates their existing appointment — don't create a second one. Confirm the new time back to them: "Done — you're now set for [new day/time]."
+- If the customer wants to CANCEL, include "schedule_appointment": { "cancel": true } and acknowledge warmly: "No problem, I've cancelled that. Just text anytime to set up a new time."
+- Only act on a change when the customer clearly states the new time (for a move) or clearly asks to cancel. If they're just asking whether they can change it, answer yes and ask what works better — don't change anything yet.
+
 IMPORTANT: If PRE-SCORED RECOMMENDATIONS are included in the user message, present them NOW in your reply — do not say "let me find options" or defer to a future message. The inventory search has already been done for you.`;
 }

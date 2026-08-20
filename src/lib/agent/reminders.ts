@@ -32,20 +32,24 @@ export async function processPendingReminders(): Promise<number> {
   if (error) { console.error('[Reminders] query error:', error.message); return 0; }
   if (!appts || appts.length === 0) return 0;
 
-  // Which of these already had a reminder sent? (dedupe via agent_logs)
+  // Which of these already got a reminder? Dedupe via agent_logs using the
+  // allowed 'tool_call' action. Key on appointment_id + scheduled_at so a
+  // rescheduled appointment (new time) correctly gets a fresh reminder.
   const convIds = [...new Set(appts.map((a: any) => a.conversation_id))];
   const { data: logs } = await db
     .from('agent_logs')
     .select('details')
-    .eq('action', 'appointment_reminder_sent')
+    .eq('action', 'tool_call')
     .in('conversation_id', convIds);
   const reminded = new Set(
-    (logs || []).map((l: any) => l.details && l.details.appointment_id).filter(Boolean)
+    (logs || [])
+      .filter((l: any) => l.details && l.details.tool === 'appointment_reminder')
+      .map((l: any) => `${l.details.appointment_id}|${l.details.scheduled_at}`)
   );
 
   let sent = 0;
   for (const a of appts as any[]) {
-    if (reminded.has(a.id)) continue;
+    if (reminded.has(`${a.id}|${a.scheduled_at}`)) continue;
     const conv = a.conversation;
     const dealer = a.dealer;
     if (!conv || conv.status === 'closed' || conv.status === 'handed_off') continue;
@@ -64,11 +68,12 @@ export async function processPendingReminders(): Promise<number> {
 
     try {
       await sendAndTrack(a.dealer_id, a.conversation_id, phone, message, 'agent');
-      await db.from('agent_logs').insert({
+      const { error: logErr } = await db.from('agent_logs').insert({
         conversation_id: a.conversation_id,
-        action: 'appointment_reminder_sent',
-        details: { appointment_id: a.id, scheduled_at: a.scheduled_at },
+        action: 'tool_call',
+        details: { tool: 'appointment_reminder', appointment_id: a.id, scheduled_at: a.scheduled_at },
       });
+      if (logErr) console.error('[Reminders] dedup log failed:', logErr.message);
       sent++;
     } catch (err) {
       console.error('[Reminders] send error for appointment', a.id, err);
