@@ -5,6 +5,7 @@ import { sendAndTrack } from '@/lib/sms';
 import { scheduleFollowUp } from '@/lib/agent/followup';
 import { triggerHandoff } from '@/lib/agent/handoff';
 import { isWithinBusinessHours } from '@/lib/business-hours';
+import { extractZip, geocodeZip, nearestDealer } from '@/lib/geocode';
 import type { Conversation, Lead, Dealer, Message, DealerSettings } from '@/lib/types';
 
 /**
@@ -157,10 +158,56 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
-      const { sendSms } = await import('@/lib/sms');
-      await sendSms(from, `Hey! Thanks for texting. What mattress store are you trying to reach? Just reply with the store name and I'll connect you.`);
-      console.log('[Telnyx] Unknown sender, asked for store name. From:', from, 'Body:', body.substring(0, 50));
-      return NextResponse.json({ ok: true });
+      // Cold text to the shared number (no existing lead, no keyword, no
+      // matching prospect): route to the nearest store by ZIP code. If we
+      // don't have a ZIP yet, ask for one; once we do, geocode it and pick
+      // the closest active dealer.
+      const sharedNumber = process.env.TELNYX_PHONE_NUMBER?.replace(/\\n/g, '').trim();
+      if (to === sharedNumber && sharedNumber) {
+        const zip = extractZip(body);
+
+        if (!zip) {
+          // No ZIP yet — ask for it so we can route to the nearest store.
+          const { sendSms } = await import('@/lib/sms');
+          await sendSms(from, `Thanks for reaching out! What's your ZIP code? I'll connect you with the store nearest you.`);
+          console.log('[Telnyx] Cold text, asked for ZIP. From:', from);
+          return NextResponse.json({ ok: true });
+        }
+
+        const { data: activeDealers } = await db
+          .from('dealers')
+          .select('*')
+          .eq('active', true);
+
+        const origin = await geocodeZip(zip);
+        if (origin && activeDealers) {
+          const nearest = nearestDealer(origin, activeDealers as any[]);
+          if (nearest) dealer = nearest as Dealer;
+        }
+
+        // Valid-looking ZIP but couldn't geocode / no dealer has coordinates:
+        // fall back to the dealer that owns the shared number so we still engage.
+        if (!dealer && activeDealers) {
+          dealer =
+            ((activeDealers as any[]).find((d) => d.twilio_phone === sharedNumber) as Dealer) ||
+            null;
+        }
+
+        // Couldn't geocode the ZIP at all — ask them to re-check it.
+        if (!dealer && !origin) {
+          const { sendSms } = await import('@/lib/sms');
+          await sendSms(from, `Hmm, I couldn't find that ZIP code — could you double-check it? Reply with your 5-digit ZIP and I'll connect you with the nearest store.`);
+          console.log('[Telnyx] Cold text, bad ZIP:', zip, 'From:', from);
+          return NextResponse.json({ ok: true });
+        }
+      }
+
+      if (!dealer) {
+        const { sendSms } = await import('@/lib/sms');
+        await sendSms(from, `Hey! Thanks for texting. What mattress store are you trying to reach? Just reply with the store name and I'll connect you.`);
+        console.log('[Telnyx] Unknown sender, asked for store name. From:', from, 'Body:', body.substring(0, 50));
+        return NextResponse.json({ ok: true });
+      }
     }
 
     // Find or create lead

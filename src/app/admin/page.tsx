@@ -117,6 +117,12 @@ export default function AdminDashboard() {
   async function authenticateDealer() {
     const params = new URLSearchParams(window.location.search);
     const tokenParam = params.get('token');
+    // Super-admin dealer switcher: a dealer_id in the URL means "view this
+    // dealer". Persist it so it survives navigation to other admin pages.
+    const dealerParam = params.get('dealer_id');
+    if (dealerParam) {
+      localStorage.setItem('sms_dealer_override', dealerParam);
+    }
 
     if (tokenParam) {
       localStorage.setItem('sms_auth_token', tokenParam);
@@ -130,11 +136,13 @@ export default function AdminDashboard() {
       return;
     }
 
+    const overrideDealerId = localStorage.getItem('sms_dealer_override') || undefined;
+
     try {
       const res = await fetch('/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, dealer_id: overrideDealerId }),
       });
       const data = await res.json();
 

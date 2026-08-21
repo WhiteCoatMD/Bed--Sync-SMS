@@ -66,6 +66,55 @@ export function isDatetimeWithinHours(datetime: string, settings: DealerSettings
 }
 
 /**
+ * Interpret a naive "YYYY-MM-DDTHH:MM:SS" datetime as a WALL-CLOCK time in the
+ * given IANA timezone and return the matching UTC instant as an ISO string.
+ *
+ * The LLM emits appointment times as store-local wall clock with no offset
+ * (e.g. "2026-08-22T14:00:00" meaning 2 PM at the store). Stored directly, a
+ * no-offset timestamp is read as UTC — so 2 PM local silently became 2 PM UTC
+ * (4 hours early in America/New_York). This converts it correctly.
+ *
+ * If the input already carries an offset or 'Z', it already denotes a fixed
+ * moment and is returned unchanged (normalized to ISO).
+ */
+export function zonedWallClockToUtcIso(datetime: string, timeZone: string): string {
+  const raw = (datetime || '').trim();
+  const hasOffset = /([zZ])$|[+-]\d{2}:?\d{2}$/.test(raw);
+  if (hasOffset) {
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? raw : d.toISOString();
+  }
+  // Treat the naive components as if UTC to get a reference instant, then shift
+  // by the target timezone's offset at that instant.
+  const asUtc = new Date(raw + 'Z');
+  if (isNaN(asUtc.getTime())) {
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? raw : d.toISOString();
+  }
+  const offsetMs = tzOffsetMs(timeZone, asUtc);
+  return new Date(asUtc.getTime() - offsetMs).toISOString();
+}
+
+/** Offset (ms) of an IANA timezone from UTC at a given instant. */
+function tzOffsetMs(timeZone: string, at: Date): number {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  const map: Record<string, string> = {};
+  for (const p of dtf.formatToParts(at)) if (p.type !== 'literal') map[p.type] = p.value;
+  let hour = Number(map.hour);
+  if (hour === 24) hour = 0; // Intl can render midnight as '24'
+  const asUTC = Date.UTC(
+    Number(map.year), Number(map.month) - 1, Number(map.day),
+    hour, Number(map.minute), Number(map.second)
+  );
+  return asUTC - at.getTime();
+}
+
+/**
  * Format business hours for the AI system prompt.
  */
 export function formatHoursForPrompt(settings: DealerSettings): string {

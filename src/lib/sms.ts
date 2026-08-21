@@ -9,7 +9,10 @@ export async function sendSms(
   from?: string,
   mediaUrls?: string[]
 ): Promise<string | null> {
-  const fromNumber = from || process.env.TELNYX_PHONE_NUMBER!;
+  // Sanitize the source number: env vars can carry a stray newline/space when
+  // pasted (TELNYX_PHONE_NUMBER has had a trailing "\n"), which Telnyx rejects
+  // as an invalid source number (error 10004). Keep only digits and a leading +.
+  const fromNumber = (from || process.env.TELNYX_PHONE_NUMBER || '').replace(/[^\d+]/g, '');
 
   try {
     const isMms = mediaUrls && mediaUrls.length > 0;

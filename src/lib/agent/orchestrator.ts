@@ -3,7 +3,7 @@ import OpenAI from 'openai';
 import { getServiceClient } from '../supabase';
 import { buildSystemPrompt } from './system-prompt';
 import { canTransition, shouldAutoHandoff, checkHotLeadAlert } from './state-machine';
-import { isDatetimeWithinHours } from '../business-hours';
+import { isDatetimeWithinHours, zonedWallClockToUtcIso } from '../business-hours';
 import { searchInventory, formatInventoryForAgent } from './tools/inventory-search';
 import { generateRecommendations, formatRecommendationsForSms } from './tools/recommendation';
 import { extractQualificationSignals, mergeContext } from './tools/qualification';
@@ -74,11 +74,15 @@ export async function processMessage(
       in_stock_only: true,
     });
 
-    // Check if dealer has real pricing — if all items are $0/null, flag it
+    // Check if dealer has real pricing — if all items are $0/null, flag it.
+    // Either way we still surface the matching products (and photos) to the
+    // agent; the flag just switches the prompt into "no pricing" mode (describe
+    // the options, never quote a price, drive them to come in). This is how MBA
+    // dealers run it — pricing happens in-store / with a rep.
     hasRealPricing = items.some((item) => (item.sale_price || item.price) > 0);
 
-    inventoryContext = hasRealPricing ? formatInventoryForAgent(items) : '';
-    recommendations = hasRealPricing ? generateRecommendations(items, updatedContext) : [];
+    inventoryContext = formatInventoryForAgent(items);
+    recommendations = generateRecommendations(items, updatedContext);
 
     // Collect image URLs from recommended items for MMS
     if (recommendations.length > 0) {
@@ -259,9 +263,17 @@ export async function processMessage(
             });
           }
         } else if (appt.datetime) {
-          const withinHours = isDatetimeWithinHours(appt.datetime, dealer.settings);
+          // The LLM emits store-local wall-clock time with no offset; convert it
+          // to a true UTC instant using the dealer's timezone before checking
+          // hours or storing it (a no-offset timestamp would otherwise be read
+          // as UTC and land hours off).
+          const scheduledIso = zonedWallClockToUtcIso(
+            appt.datetime,
+            dealer.settings.timezone || 'America/Chicago'
+          );
+          const withinHours = isDatetimeWithinHours(scheduledIso, dealer.settings);
           if (!withinHours) {
-            console.warn('[Agent] Appointment rejected — outside business hours:', appt.datetime);
+            console.warn('[Agent] Appointment rejected — outside business hours:', appt.datetime, '->', scheduledIso);
             await db.from('agent_logs').insert({
               conversation_id: conversation.id, action: 'tool_call',
               details: { tool: 'schedule_appointment', ...appt, rejected: 'outside_business_hours' },
@@ -270,7 +282,7 @@ export async function processMessage(
             // Reschedule: update the existing appointment. The new scheduled_at
             // means the reminder job will send a fresh reminder for the new time.
             const upd: Record<string, unknown> = {
-              scheduled_at: appt.datetime,
+              scheduled_at: scheduledIso,
               type: appt.type || current.type,
               duration_minutes: appt.type === 'phone_call' ? 15 : 30,
               status: 'scheduled',
@@ -280,7 +292,7 @@ export async function processMessage(
             await db.from('appointments').update(upd).eq('id', current.id);
             await db.from('agent_logs').insert({
               conversation_id: conversation.id, action: 'tool_call',
-              details: { tool: 'reschedule_appointment', appointment_id: current.id, ...appt },
+              details: { tool: 'reschedule_appointment', appointment_id: current.id, ...appt, scheduled_at: scheduledIso },
             });
           } else {
             // New booking
@@ -289,7 +301,7 @@ export async function processMessage(
               conversation_id: conversation.id,
               lead_id: lead.id,
               type: appt.type || 'showroom_visit',
-              scheduled_at: appt.datetime,
+              scheduled_at: scheduledIso,
               duration_minutes: appt.type === 'phone_call' ? 15 : 30,
               status: 'scheduled',
               notes: appt.notes || null,
@@ -401,13 +413,13 @@ function buildUserMessage(
     content += recommendations
       .map(
         (r, i) =>
-          `${i + 1}. ${r.product_name} - ${r.size} - $${r.price}${r.sale_price ? ` (sale)` : ''} - ${r.firmness} - ${r.why_it_fits}`
+          `${i + 1}. ${r.product_name} - ${r.size}${r.price > 0 ? ` - $${r.price}${r.sale_price ? ` (sale)` : ''}` : ''} - ${r.firmness} - ${r.why_it_fits}`
       )
       .join('\n');
   }
 
   if (noPricingBusiness) {
-    content += `\n\nNO PRICING AVAILABLE: This dealer's inventory has no pricing set. Do NOT mention prices, say "$0", or say pricing is unavailable/missing. Instead be reassuring and vague — confirm you have options that fit their needs, then pivot to connecting them with someone: "We have some great options that would work for you! When's a good time for someone from ${noPricingBusiness} to give you a call?" Always sound confident — never apologize or hint that pricing info is missing.`;
+    content += `\n\nPRICING POLICY (important): ${noPricingBusiness} does not quote prices over text — pricing is given in person so customers come in or talk to a rep. You MAY describe the specific options above (name, feel, type, standout features) and why they'd fit, but NEVER state, quote, estimate, or hint at any price, and never say "$0", "contact us", or "call for price". For pricing, warmly steer them to come in and try the mattresses (or talk to a rep), and offer to set up a showroom visit — e.g. "The best way to get real pricing and actually feel the difference is to come try them — want me to set up a time for you to come in?" Sound confident; never apologize or suggest info is missing.`;
   }
 
   if (pendingHandoffBusiness) {
