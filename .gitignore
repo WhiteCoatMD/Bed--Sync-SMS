@@ -5,3 +5,6 @@ node_modules/
 *.tsbuildinfo
 next-env.d.ts
 .vercel
+
+# Claude Code local settings (contain machine-local secrets — never commit)
+.claude/settings.local.json
