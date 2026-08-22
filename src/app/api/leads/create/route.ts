@@ -12,6 +12,11 @@ const CreateLeadSchema = z.object({
   email: z.string().email().optional(),
   source: z.enum(['website', 'facebook', 'google', 'manual', 'referral', 'walk_in', 'other']).default('website'),
   initial_message: z.string().optional(),
+  // Dealer lead-alert target + internal secret. notify_phone is honored ONLY
+  // when notify_secret matches INTERNAL_API_SECRET (server-to-server), so this
+  // public endpoint can't be used to text arbitrary numbers.
+  notify_phone: z.string().optional(),
+  notify_secret: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -119,10 +124,15 @@ export async function POST(req: NextRequest) {
 
     // Alert the dealer about the new lead, sent from the dealer's own SMS line
     // (the 833 toll-free is approved; the main app's default number is
-    // 10DLC-rejected). The target is read from the DEALER RECORD
-    // (settings.lead_notify_phone) — never from caller input — so this public
-    // endpoint can't be abused to text arbitrary numbers.
-    const notifyPhone = ((dealer as Dealer).settings as unknown as Record<string, unknown> | null)?.lead_notify_phone as string | undefined;
+    // 10DLC-rejected). Target resolution: a caller-supplied notify_phone is used
+    // ONLY with a valid internal secret (server-to-server from the main app);
+    // otherwise fall back to the number stored on the dealer record. This keeps
+    // the public endpoint safe from being used to text arbitrary numbers.
+    const secretOk = !!parsed.data.notify_secret && !!process.env.INTERNAL_API_SECRET
+      && parsed.data.notify_secret === process.env.INTERNAL_API_SECRET;
+    const notifyPhone = (secretOk && parsed.data.notify_phone)
+      ? parsed.data.notify_phone
+      : (((dealer as Dealer).settings as unknown as Record<string, unknown> | null)?.lead_notify_phone as string | undefined);
     if (notifyPhone) {
       try {
         const who = customer_name || phone;
