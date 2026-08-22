@@ -114,8 +114,11 @@ export async function processMessage(
     // Collect image URLs from recommended items for MMS
     if (recommendations.length > 0) {
       const recIds = new Set(recommendations.map(r => r.inventory_id));
+      // Only photograph products they haven't been sent yet. Re-attaching the
+      // same images on every follow-up message is spam, and every MMS costs.
+      const alreadySent = new Set(updatedContext.recommendations_shown || []);
       recommendationImageUrls = items
-        .filter(item => recIds.has(item.id) && item.image_url)
+        .filter(item => recIds.has(item.id) && item.image_url && !alreadySent.has(item.id))
         .map(item => item.image_url!)
         .slice(0, 3); // Telnyx MMS limit
     }
