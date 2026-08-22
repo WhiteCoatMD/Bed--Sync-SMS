@@ -124,39 +124,43 @@ export async function processMessage(
     let rawText: string | null = null;
     let modelUsed = 'unknown';
 
+    // Keep only the most recent turns — SMS threads don't need deep history and
+    // trimming input tokens is the main per-message cost lever.
     const llmMessages = [
-      ...chatHistory.map((m) => ({
+      ...chatHistory.slice(-10).map((m) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
       })),
       { role: 'user' as const, content: userContent },
     ];
 
-    // Try Anthropic first, fall back to OpenAI
+    // Try Anthropic first, fall back to OpenAI. Cost-tuned for scale:
+    // Haiku (fast + cheap, plenty for SMS sales) + prompt caching on the large,
+    // stable system prompt so repeat turns in a conversation reuse it cheaply.
     if (process.env.ANTHROPIC_API_KEY) {
       try {
         const anthropic = getAnthropic();
         const completion = await anthropic.messages.create({
-          model: 'claude-sonnet-4-6-20250514',
-          system: systemPrompt,
+          model: 'claude-haiku-4-5-20251001',
+          system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
           messages: llmMessages as Anthropic.MessageParam[],
           temperature: 0.7,
           max_tokens: 500,
         });
         const rawBlock = completion.content[0];
         rawText = rawBlock?.type === 'text' ? rawBlock.text : null;
-        modelUsed = 'claude-sonnet-4-5-20250514';
+        modelUsed = 'claude-haiku-4-5-20251001';
       } catch (anthropicErr) {
         console.error('[Agent] Anthropic error, falling back to OpenAI:', anthropicErr);
       }
     }
 
-    // Fallback to OpenAI if Anthropic failed or unavailable
+    // Fallback to OpenAI if Anthropic failed or unavailable (cheap tier).
     if (!rawText && process.env.OPENAI_API_KEY) {
       try {
         const openai = getOpenAI();
         const completion = await openai.chat.completions.create({
-          model: 'gpt-4o',
+          model: 'gpt-4o-mini',
           messages: [
             { role: 'system', content: systemPrompt },
             ...llmMessages,
@@ -165,7 +169,7 @@ export async function processMessage(
           max_tokens: 500,
         });
         rawText = completion.choices[0]?.message?.content || null;
-        modelUsed = 'gpt-4o';
+        modelUsed = 'gpt-4o-mini';
       } catch (openaiErr) {
         console.error('[Agent] OpenAI fallback error:', openaiErr);
       }
