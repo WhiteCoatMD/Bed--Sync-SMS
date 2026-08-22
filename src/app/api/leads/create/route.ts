@@ -12,9 +12,6 @@ const CreateLeadSchema = z.object({
   email: z.string().email().optional(),
   source: z.enum(['website', 'facebook', 'google', 'manual', 'referral', 'walk_in', 'other']).default('website'),
   initial_message: z.string().optional(),
-  // Optional dealer notification number — alerted about the new lead from the
-  // dealer's own (approved) SMS line.
-  notify_phone: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -120,14 +117,17 @@ export async function POST(req: NextRequest) {
       details: { source, is_new: isNew, initial_message },
     });
 
-    // Optional: alert the dealer's notification number about the new lead, sent
-    // from the dealer's own SMS line (the 833 toll-free is approved; the main
-    // app's default number is 10DLC-rejected, so alerts are routed through here).
-    if (parsed.data.notify_phone) {
+    // Alert the dealer about the new lead, sent from the dealer's own SMS line
+    // (the 833 toll-free is approved; the main app's default number is
+    // 10DLC-rejected). The target is read from the DEALER RECORD
+    // (settings.lead_notify_phone) — never from caller input — so this public
+    // endpoint can't be abused to text arbitrary numbers.
+    const notifyPhone = ((dealer as Dealer).settings as Record<string, unknown> | null)?.lead_notify_phone as string | undefined;
+    if (notifyPhone) {
       try {
         const who = customer_name || phone;
         const alert = `New website lead for ${(dealer as Dealer).business_name}: ${who} (${phone}) asked for more info on your mattresses. The AI is already texting them — check your dashboard to follow up.`;
-        await sendSms(parsed.data.notify_phone, alert, (dealer as Dealer).twilio_phone || undefined);
+        await sendSms(String(notifyPhone), alert, (dealer as Dealer).twilio_phone || undefined);
       } catch (notifyErr) {
         console.error('[Lead Create] dealer notify error:', notifyErr);
       }
