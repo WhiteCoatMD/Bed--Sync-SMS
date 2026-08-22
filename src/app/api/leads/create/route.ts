@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
 import { processMessage } from '@/lib/agent/orchestrator';
-import { sendAndTrack } from '@/lib/sms';
+import { sendAndTrack, sendSms } from '@/lib/sms';
 import { z } from 'zod';
 import type { Conversation, Lead, Dealer, Message } from '@/lib/types';
 
@@ -12,6 +12,9 @@ const CreateLeadSchema = z.object({
   email: z.string().email().optional(),
   source: z.enum(['website', 'facebook', 'google', 'manual', 'referral', 'walk_in', 'other']).default('website'),
   initial_message: z.string().optional(),
+  // Optional dealer notification number — alerted about the new lead from the
+  // dealer's own (approved) SMS line.
+  notify_phone: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -116,6 +119,19 @@ export async function POST(req: NextRequest) {
       action: 'message_received',
       details: { source, is_new: isNew, initial_message },
     });
+
+    // Optional: alert the dealer's notification number about the new lead, sent
+    // from the dealer's own SMS line (the 833 toll-free is approved; the main
+    // app's default number is 10DLC-rejected, so alerts are routed through here).
+    if (parsed.data.notify_phone) {
+      try {
+        const who = customer_name || phone;
+        const alert = `New website lead for ${(dealer as Dealer).business_name}: ${who} (${phone}) asked for more info on your mattresses. The AI is already texting them — check your dashboard to follow up.`;
+        await sendSms(parsed.data.notify_phone, alert, (dealer as Dealer).twilio_phone || undefined);
+      } catch (notifyErr) {
+        console.error('[Lead Create] dealer notify error:', notifyErr);
+      }
+    }
 
     // If auto-reply is enabled, process and respond immediately
     if ((dealer as Dealer).settings.auto_reply) {
