@@ -358,7 +358,11 @@ export async function processMessage(
     }
 
     return {
-      reply: parsed.reply || "I'm sorry, could you say that again?",
+      reply: ensureBusinessIntro(
+        parsed.reply || "I'm sorry, could you say that again?",
+        dealer.business_name,
+        recentMessages
+      ),
       media_urls: recommendationImageUrls.length > 0 ? recommendationImageUrls : undefined,
       new_state: handoffCheck.handoff ? 'handed_off' : newState,
       context_updates: allContextUpdates,
@@ -443,6 +447,33 @@ function getHandoffMessage(businessName: string, reason: string): string {
     return `I understand your frustration, and I want to make sure you get the help you need. Let me connect you with a team member at ${businessName} who can assist you personally.`;
   }
   return `Let me connect you with someone from our team at ${businessName} who can help you with that. They'll reach out shortly!`;
+}
+
+/**
+ * A customer has no idea who is texting them unless we say so. The model is
+ * told to introduce the store, but that instruction competes with the
+ * "under 160 characters" rule and gets dropped, so enforce it on the first
+ * outbound message of a conversation. Slots in after an opening "Hey!" when
+ * there is one, otherwise leads with it.
+ */
+export function ensureBusinessIntro(
+  reply: string,
+  businessName: string | null | undefined,
+  recentMessages: Message[]
+): string {
+  const name = (businessName || '').trim();
+  if (!name || !reply) return reply;
+
+  const alreadySpoken = recentMessages.some((m) => m.direction === 'outbound');
+  if (alreadySpoken) return reply;
+  if (reply.toLowerCase().includes(name.toLowerCase())) return reply;
+
+  const opener = reply.match(/^(hey there|hey|hi|hello)[!,.]*\s+/i);
+  if (opener) {
+    const rest = reply.slice(opener[0].length);
+    return `${opener[1]}! This is ${name}. ${rest.charAt(0).toUpperCase()}${rest.slice(1)}`;
+  }
+  return `This is ${name}. ${reply}`;
 }
 
 function fallbackDecision(
