@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
     // 10DLC-rejected). The target is read from the DEALER RECORD
     // (settings.lead_notify_phone) — never from caller input — so this public
     // endpoint can't be abused to text arbitrary numbers.
-    const notifyPhone = ((dealer as Dealer).settings as Record<string, unknown> | null)?.lead_notify_phone as string | undefined;
+    const notifyPhone = ((dealer as Dealer).settings as unknown as Record<string, unknown> | null)?.lead_notify_phone as string | undefined;
     if (notifyPhone) {
       try {
         const who = customer_name || phone;
