@@ -266,13 +266,32 @@ export async function POST(req: NextRequest) {
     }
 
     // Record inbound message
-    await db.from('messages').insert({
+    const { data: inboundRow } = await db.from('messages').insert({
       conversation_id: conversation.id,
       direction: 'inbound',
       sender: 'customer',
       body,
       twilio_sid: messageId, // Keep field name for backward compat
-    });
+    }).select('id, created_at').single();
+
+    // Customers double-text constantly ("I'd like a former mattress" / "Oops,
+    // firmer"). Each text is its own webhook, so two invocations run at once
+    // and both reply — the first one answering a message that has already been
+    // corrected. If a newer inbound has landed, this reply is stale: drop it
+    // and let the newer invocation answer, since it reads the full history and
+    // sees both messages. The newest message can never be superseded, so
+    // someone always replies.
+    const supersededBy = async () => {
+      if (!inboundRow?.created_at) return false;
+      const { data: newer } = await db
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', conversation.id)
+        .eq('direction', 'inbound')
+        .gt('created_at', inboundRow.created_at)
+        .limit(1);
+      return !!(newer && newer.length > 0);
+    };
 
     // Track usage
     await db.from('usage_events').insert({
@@ -340,6 +359,12 @@ export async function POST(req: NextRequest) {
       .order('created_at', { ascending: true })
       .limit(20);
 
+    // Cheap check before spending a model call on a message already corrected.
+    if (await supersededBy()) {
+      console.log('[Telnyx Inbound] Newer message arrived — skipping stale reply');
+      return NextResponse.json({ ok: true, superseded: true });
+    }
+
     // Process through agent
     const decision = await processMessage({
       conversation: conversation as Conversation,
@@ -348,6 +373,17 @@ export async function POST(req: NextRequest) {
       inboundMessage: body,
       recentMessages: (messages || []) as Message[],
     });
+
+    // Check again — the correction usually lands while the model is thinking.
+    if (await supersededBy()) {
+      console.log('[Telnyx Inbound] Newer message arrived while replying — dropping stale reply');
+      await db.from('agent_logs').insert({
+        conversation_id: conversation.id,
+        action: 'tool_call',
+        details: { tool: 'reply_superseded', body },
+      });
+      return NextResponse.json({ ok: true, superseded: true });
+    }
 
     // Send reply (MMS if images available)
     await sendAndTrack(
