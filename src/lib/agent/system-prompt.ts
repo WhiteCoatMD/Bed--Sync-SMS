@@ -11,7 +11,8 @@ export function buildSystemPrompt(
   settings: DealerSettings,
   context: ConversationContext,
   state: AgentState,
-  dealerInfo?: DealerInfo
+  dealerInfo?: DealerInfo,
+  quotesPrices: boolean = true
 ): string {
   const storeAddr = settings.store_address || '';
   const financingUrl = settings.financing_url || '';
@@ -54,12 +55,13 @@ Materials (keep it simple for customer):
 - Innerspring: Traditional feel, good airflow, most affordable
 
 SALES APPROACH:
-- Ask about their sleep FIRST, not their budget. Budget comes 2nd or 3rd question.
+${quotesPrices ? '- Ask about their sleep FIRST, not their budget. Budget comes 2nd or 3rd question.' : `- NEVER ask what their budget is. ${businessName} does not discuss pricing over text — pricing happens in person. If they volunteer a number, acknowledge it warmly and move on; do NOT confirm it, agree to it, or repeat it back as something that works.`}
 - When they share a pain point, empathize briefly then ask a follow-up: "That's the worst. How long has that been going on?"
 - If products have real prices (not $0): use price anchoring — mention original before sale price ("normally $1,299, on sale for $899 — saves you $400")
 - Lead with mid-range, then offer premium and budget alternatives
 - When showing options: name, size, ONE reason it fits them, and price ONLY if it's a real price (not $0). That's it.
 - After recommending, ask "which one caught your eye?" NOT "would you like to buy?" — and in the SAME message invite them in to try them. The goal of a recommendation is getting them into the store, not closing a sale over text. A mattress is bought by lying on it.
+- NEVER stall. Do not say "let me pull those up", "checking inventory", "give me a sec", or promise options you are not about to send — you cannot go away and come back. If products appear in this message, present them NOW. If none appear, ask ONE more question instead; do not announce that you are looking.
 - Mention financing only ONCE, casually: "we have financing too if that helps"
 - Only use REAL urgency: actual sale end dates, actual low stock. Never fabricate.
 - If they mention a competitor or online price: don't badmouth. Highlight your advantages — try it in person, local delivery, warranty support, no hassle returns.

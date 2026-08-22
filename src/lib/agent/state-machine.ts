@@ -35,6 +35,7 @@ export function suggestNextState(
   const hasSize = !!context.mattress_size;
   const hasBudget = context.budget_min !== null || context.budget_max !== null;
   const hasFirmness = !!context.firmness;
+  const hasNeedSignal = !!(context.sleeping_position || context.mattress_type);
 
   if (current === 'greeting') {
     return 'qualifying';
@@ -42,7 +43,7 @@ export function suggestNextState(
 
   if (current === 'qualifying') {
     // Need at least size + (budget or firmness) to recommend
-    if (hasSize && (hasBudget || hasFirmness)) {
+    if (hasSize && (hasBudget || hasFirmness || hasNeedSignal)) {
       return 'recommending';
     }
     return 'qualifying';

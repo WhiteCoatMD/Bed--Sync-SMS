@@ -77,7 +77,6 @@ export async function processMessage(
   // 4. If in recommending state and we have search criteria, search inventory
   let inventoryContext = '';
   let recommendations: ReturnType<typeof generateRecommendations> = [];
-  let hasRealPricing = true;
   let recommendationImageUrls: string[] = [];
 
   // Skip once the sale has moved off text — a booked visit or a human takeover
@@ -108,7 +107,6 @@ export async function processMessage(
     // agent; the flag just switches the prompt into "no pricing" mode (describe
     // the options, never quote a price, drive them to come in). This is how MBA
     // dealers run it — pricing happens in-store / with a rep.
-    hasRealPricing = items.some((item) => (item.sale_price || item.price) > 0);
 
     inventoryContext = formatInventoryForAgent(items);
     recommendations = generateRecommendations(items, updatedContext);
@@ -134,6 +132,18 @@ export async function processMessage(
     });
   }
 
+  // Does this dealer quote prices at all? Read from their catalog directly,
+  // NOT from the inventory search — the agent asks about budget during early
+  // qualifying, long before any search runs, so deciding this from the search
+  // meant a no-pricing dealer still got asked "what's your budget?".
+  const { data: pricedRows } = await db
+    .from('inventory')
+    .select('id')
+    .eq('dealer_id', dealer.id)
+    .or('price.gt.0,sale_price.gt.0')
+    .limit(1);
+  const dealerQuotesPrices = !!(pricedRows && pricedRows.length > 0);
+
   // 4. Build conversation history for the LLM
   const chatHistory = buildChatHistory(recentMessages);
 
@@ -143,10 +153,11 @@ export async function processMessage(
     dealer.settings,
     updatedContext,
     needsInventory && recommendations.length > 0 ? 'recommending' : currentState,
-    { phone: dealer.owner_phone, website: dealer.settings.store_website }
+    { phone: dealer.owner_phone, website: dealer.settings.store_website },
+    dealerQuotesPrices
   );
 
-  const noPricingBusiness = (needsInventory && !hasRealPricing) ? dealer.business_name : undefined;
+  const noPricingBusiness = !dealerQuotesPrices ? dealer.business_name : undefined;
   const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness, bookedAppointment);
 
   try {
@@ -419,7 +430,15 @@ export async function processMessage(
 }
 
 function hasEnoughToRecommend(ctx: ConversationContext): boolean {
-  return !!(ctx.mattress_size && (ctx.budget_max || ctx.firmness));
+  // Size plus ANY signal about what they need. Requiring a budget or an
+  // explicit firmness deadlocked no-pricing dealers: the agent is told not to
+  // ask about budget, and customers describe how they sleep rather than naming
+  // a firmness, so it would promise "let me pull those up" forever.
+  const anyNeed = !!(
+    ctx.budget_max || ctx.budget_min || ctx.firmness ||
+    ctx.sleeping_position || ctx.mattress_type
+  );
+  return !!(ctx.mattress_size && anyNeed);
 }
 
 function buildChatHistory(

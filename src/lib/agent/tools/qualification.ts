@@ -96,6 +96,20 @@ export function extractQualificationSignals(
     updates.sleeping_position = 'combo';
   }
 
+  // Most customers describe how they sleep, not a firmness. Derive one so the
+  // agent can actually pull recommendations - without this, a customer who
+  // never says "firm" and never names a budget can never be recommended to.
+  if (!updates.firmness && updates.sleeping_position) {
+    const byPosition: Record<string, Firmness> = {
+      side: 'medium_soft',
+      back: 'medium_firm',
+      stomach: 'firm',
+      combo: 'medium',
+    };
+    const derived = byPosition[updates.sleeping_position];
+    if (derived) updates.firmness = derived;
+  }
+
   // Financing interest
   if (/\b(financ|payment plan|monthly payment|pay over time|layaway|credit)\b/.test(lower)) {
     updates.financing_interest = true;

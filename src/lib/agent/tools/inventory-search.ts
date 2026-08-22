@@ -21,7 +21,11 @@ export async function searchInventory(
   }
 
   if (params.firmness) {
-    query = query.eq('firmness', params.firmness);
+    // Match neighbouring firmnesses too. A stomach sleeper derives "firm" and a
+    // side sleeper "medium_soft", but plenty of catalogs only stock
+    // soft/medium/firm — an exact match there returns nothing and the agent is
+    // left with no products to show.
+    query = query.in('firmness', nearbyFirmness(params.firmness));
   }
 
   if (params.type) {
@@ -60,7 +64,37 @@ export async function searchInventory(
     return [];
   }
 
-  return (data as InventoryItem[]) || [];
+  const items = (data as InventoryItem[]) || [];
+
+  // Firmness and type are usually inferred rather than asked for. If they
+  // filtered everything out, fall back to size alone rather than handing the
+  // agent an empty catalog — with nothing to show it stalls on "let me pull
+  // those up" instead of recommending.
+  if (items.length === 0 && (params.firmness || params.type)) {
+    console.log('[Inventory] No match with inferred filters — retrying on size only');
+    return searchInventory({
+      dealer_id: params.dealer_id,
+      size: params.size,
+      min_price: params.min_price,
+      max_price: params.max_price,
+      in_stock_only: params.in_stock_only,
+    });
+  }
+
+  return items;
+}
+
+/** Firmness values close enough to still be worth showing. */
+function nearbyFirmness(firmness: string): string[] {
+  const neighbours: Record<string, string[]> = {
+    soft: ['soft', 'medium_soft'],
+    medium_soft: ['medium_soft', 'soft', 'medium'],
+    medium: ['medium', 'medium_soft', 'medium_firm'],
+    medium_firm: ['medium_firm', 'medium', 'firm'],
+    firm: ['firm', 'medium_firm', 'extra_firm'],
+    extra_firm: ['extra_firm', 'firm'],
+  };
+  return neighbours[firmness] || [firmness];
 }
 
 /**
