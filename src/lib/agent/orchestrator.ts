@@ -49,6 +49,12 @@ export async function processMessage(
   const signals = extractQualificationSignals(inboundMessage);
   const updatedContext = mergeContext(context, signals as Partial<ConversationContext>);
 
+  // A website lead already told us their name on the form. Seed it so the
+  // agent never asks for something the customer has already given us.
+  if (!updatedContext.customer_name && lead.customer_name) {
+    updatedContext.customer_name = lead.customer_name;
+  }
+
   // 2. Check for automatic handoff triggers — but don't return early.
   // Always let the LLM answer the customer's question first, then hand off.
   const handoffCheck = shouldAutoHandoff(updatedContext, lead.lead_score, inboundMessage);
@@ -105,6 +111,21 @@ export async function processMessage(
     });
   }
 
+  // 3b. An appointment already on the books. Without this the agent has no
+  // idea it booked anything and keeps offering to "set up a time" after the
+  // customer already has one.
+  const { data: bookedRows } = await db
+    .from('appointments')
+    .select('type, scheduled_at')
+    .eq('conversation_id', conversation.id)
+    .in('status', ['scheduled', 'confirmed'])
+    .gt('scheduled_at', new Date().toISOString())
+    .order('scheduled_at', { ascending: true })
+    .limit(1);
+  const bookedAppointment = bookedRows && bookedRows[0]
+    ? describeAppointment(bookedRows[0].type, bookedRows[0].scheduled_at, dealer.settings.timezone)
+    : undefined;
+
   // 4. Build conversation history for the LLM
   const chatHistory = buildChatHistory(recentMessages);
 
@@ -118,7 +139,7 @@ export async function processMessage(
   );
 
   const noPricingBusiness = (needsInventory && !hasRealPricing) ? dealer.business_name : undefined;
-  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness);
+  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness, bookedAppointment);
 
   try {
     let rawText: string | null = null;
@@ -234,10 +255,10 @@ export async function processMessage(
         });
       }
 
-      allContextUpdates.recommendations_shown = [
+      allContextUpdates.recommendations_shown = Array.from(new Set([
         ...(updatedContext.recommendations_shown || []),
         ...recommendations.map((r) => r.inventory_id),
-      ];
+      ]));
     }
 
     // Book / reschedule / cancel an appointment based on the AI's output.
@@ -403,12 +424,24 @@ function buildChatHistory(
   }));
 }
 
+/** Human-readable appointment line in the store's own timezone. */
+function describeAppointment(type: string | null, scheduledAt: string, timezone?: string): string {
+  const tz = timezone || 'America/Chicago';
+  const when = new Date(scheduledAt).toLocaleString('en-US', {
+    timeZone: tz, weekday: 'long', month: 'long', day: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+  });
+  const kind = type === 'phone_call' ? 'phone call' : 'showroom visit';
+  return `${kind} on ${when}`;
+}
+
 function buildUserMessage(
   message: string,
   inventoryContext: string,
   recommendations: ReturnType<typeof generateRecommendations>,
   pendingHandoffBusiness?: string,
-  noPricingBusiness?: string
+  noPricingBusiness?: string,
+  bookedAppointment?: string
 ): string {
   let content = `Customer says: "${message}"`;
 
@@ -427,7 +460,13 @@ function buildUserMessage(
   }
 
   if (noPricingBusiness) {
-    content += `\n\nPRICING POLICY (important): ${noPricingBusiness} does not quote prices over text — pricing is given in person so customers come in or talk to a rep. You MAY describe the specific options above (name, feel, type, standout features) and why they'd fit, but NEVER state, quote, estimate, or hint at any price, and never say "$0", "contact us", or "call for price". For pricing, warmly steer them to come in and try the mattresses (or talk to a rep), and offer to set up a showroom visit — e.g. "The best way to get real pricing and actually feel the difference is to come try them — want me to set up a time for you to come in?" Sound confident; never apologize or suggest info is missing.`;
+    content += `\n\nPRICING POLICY (important): ${noPricingBusiness} does not quote prices over text — pricing is given in person so customers come in or talk to a rep. You MAY describe the specific options above (name, feel, type, standout features) and why they'd fit, but NEVER state, quote, estimate, or hint at any price, and never say "$0", "contact us", or "call for price". For pricing, warmly steer them to come in and try the mattresses (or talk to a rep), and offer to set up a showroom visit — e.g. "The best way to get real pricing and actually feel the difference is to come try them — want me to set up a time for you to come in?" Sound confident; never apologize or suggest info is missing. Do NOT ask what their budget is, and if they volunteer a number do not confirm, agree to, or repeat it back as something that works — acknowledge warmly and move on to getting them in to try the mattresses.`;
+  }
+
+  if (bookedAppointment) {
+    content += `
+
+ALREADY BOOKED: this customer has a ${bookedAppointment}. Do NOT offer to set up a time, do NOT ask what day or time works, and do NOT ask them to come in as if nothing is scheduled — it is done. If they ask, confirm those details. Only change it if they clearly ask to reschedule or cancel.`;
   }
 
   if (pendingHandoffBusiness) {
