@@ -172,13 +172,14 @@ export async function POST(req: NextRequest) {
         recentMessages: (messages || []) as Message[],
       });
 
-      // Send reply
+      // Send reply (MMS when the agent has product photos to show)
       await sendAndTrack(
         dealer_id,
         conversation.id,
         phone,
         decision.reply,
-        'agent'
+        'agent',
+        decision.media_urls
       );
 
       // Update conversation state

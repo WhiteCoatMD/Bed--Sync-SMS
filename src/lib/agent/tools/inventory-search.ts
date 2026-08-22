@@ -25,7 +25,9 @@ export async function searchInventory(
   }
 
   if (params.type) {
-    query = query.eq('type', params.type);
+    // The column is constrained to snake_case values ('memory_foam'), but the
+    // model emits natural language ('Memory Foam'). Normalise before matching.
+    query = query.ilike('type', params.type.trim().toLowerCase().replace(/[\s-]+/g, '_'));
   }
 
   if (params.brand) {

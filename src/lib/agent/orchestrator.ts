@@ -59,15 +59,38 @@ export async function processMessage(
   // Always let the LLM answer the customer's question first, then hand off.
   const handoffCheck = shouldAutoHandoff(updatedContext, lead.lead_score, inboundMessage);
 
-  // 3. If in recommending state and we have search criteria, search inventory
+  // 3. An appointment already on the books. Without this the agent has no
+  // idea it booked anything and keeps offering to "set up a time" after the
+  // customer already has one.
+  const { data: bookedRows } = await db
+    .from('appointments')
+    .select('type, scheduled_at')
+    .eq('conversation_id', conversation.id)
+    .in('status', ['scheduled', 'confirmed'])
+    .gt('scheduled_at', new Date().toISOString())
+    .order('scheduled_at', { ascending: true })
+    .limit(1);
+  const bookedAppointment = bookedRows && bookedRows[0]
+    ? describeAppointment(bookedRows[0].type, bookedRows[0].scheduled_at, dealer.settings.timezone)
+    : undefined;
+
+  // 4. If in recommending state and we have search criteria, search inventory
   let inventoryContext = '';
   let recommendations: ReturnType<typeof generateRecommendations> = [];
   let hasRealPricing = true;
   let recommendationImageUrls: string[] = [];
 
-  const needsInventory =
+  // Skip once the sale has moved off text — a booked visit or a human takeover
+  // means the catalog no longer needs to ride along in every prompt.
+  const saleMovedOffText = !!bookedAppointment
+    || currentState === 'handed_off'
+    || currentState === 'converted'
+    || currentState === 'lost';
+
+  const needsInventory = !saleMovedOffText && (
     currentState === 'recommending' ||
-    (currentState === 'qualifying' && hasEnoughToRecommend(updatedContext));
+    (currentState === 'qualifying' && hasEnoughToRecommend(updatedContext))
+  );
 
   if (needsInventory) {
     const items = await searchInventory({
@@ -110,21 +133,6 @@ export async function processMessage(
       },
     });
   }
-
-  // 3b. An appointment already on the books. Without this the agent has no
-  // idea it booked anything and keeps offering to "set up a time" after the
-  // customer already has one.
-  const { data: bookedRows } = await db
-    .from('appointments')
-    .select('type, scheduled_at')
-    .eq('conversation_id', conversation.id)
-    .in('status', ['scheduled', 'confirmed'])
-    .gt('scheduled_at', new Date().toISOString())
-    .order('scheduled_at', { ascending: true })
-    .limit(1);
-  const bookedAppointment = bookedRows && bookedRows[0]
-    ? describeAppointment(bookedRows[0].type, bookedRows[0].scheduled_at, dealer.settings.timezone)
-    : undefined;
 
   // 4. Build conversation history for the LLM
   const chatHistory = buildChatHistory(recentMessages);
