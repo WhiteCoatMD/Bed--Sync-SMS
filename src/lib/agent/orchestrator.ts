@@ -86,20 +86,36 @@ export async function processMessage(
   // "what do you have", "show me", "can I see them" — a direct ask for products
   // must always produce products. Waiting on a size we haven't been given is
   // how the agent ends up answering "sure, what do you have?" with nothing.
-  const wantsProducts = /\b(what (do )?(you|ya|yall|y'all) (have|got|carry)|what('| i)?s available|show me|see (them|some|what)|(any )?options|what do you got|recommend)/i
+  const wantsProducts = /\b(what (do )?(you|ya|yall|y'all) (have|got|carry)|what('| i)?s available|show me|see (them|some|what)|(any )?options|what do you got|recommend|pic(ture|s)?|photo|image|what do they look like|send me)/i
     .test(inboundMessage);
 
   // Skip once the sale has moved off text — a booked visit or a human takeover
   // means the catalog no longer needs to ride along in every prompt.
+  // Asking for pictures specifically. Photos are normally sent once per
+  // product, but if they ask to see them we send them again rather than
+  // claiming to attach pictures and attaching nothing.
+  const wantsPhotos = /(pic(ture|s)?|photo|image|what do they look like|send me)/i
+    .test(inboundMessage);
+
   const saleMovedOffText = !!bookedAppointment
     || currentState === 'handed_off'
     || currentState === 'converted'
     || currentState === 'lost';
 
-  const needsInventory = !saleMovedOffText && (
-    currentState === 'recommending' ||
-    wantsProducts ||
-    (currentState === 'qualifying' && hasEnoughToRecommend(updatedContext))
+  // A direct request for products ALWAYS wins, including after a visit is
+  // booked. Suppressing it there meant a customer who asked "can I see some
+  // options?" after booking got talked out of it ("you gotta feel these in
+  // person") instead of pictures.
+  //
+  // Otherwise: any time we know enough, show. This deliberately does not
+  // require the qualifying state — one live conversation never left 'greeting'
+  // (the model simply never proposed a transition), so a state-gated search
+  // never ran and the customer was never shown a single product.
+  const needsInventory = wantsProducts || (
+    !saleMovedOffText && (
+      currentState === 'recommending' ||
+      hasEnoughToRecommend(updatedContext)
+    )
   );
 
   if (needsInventory) {
@@ -148,7 +164,7 @@ export async function processMessage(
       const shownModels = new Set((updatedContext.models_shown || []).map(m => m.toLowerCase()));
       recommendationImageUrls = items
         .filter(item => recIds.has(item.id) && item.image_url
-          && !shownModels.has(String(item.model || '').toLowerCase()))
+          && (wantsPhotos || !shownModels.has(String(item.model || '').toLowerCase())))
         .map(item => item.image_url!)
         .slice(0, 3); // Telnyx MMS limit
 
@@ -222,7 +238,7 @@ export async function processMessage(
     && recommendations.length === 0;
 
   const sizeAfterOptions = !updatedContext.mattress_size && recommendations.length > 0;
-  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness, bookedAppointment, missingSize, outOfStockSize, returningSummary, sizeAfterOptions, repeatingOptions);
+  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness, bookedAppointment, missingSize, outOfStockSize, returningSummary, sizeAfterOptions, repeatingOptions, recommendationImageUrls.length > 0 && wantsPhotos);
 
   try {
     let rawText: string | null = null;
@@ -552,7 +568,8 @@ function buildUserMessage(
   outOfStockSize?: string | null,
   returningSummary?: string,
   sizeAfterOptions?: boolean,
-  repeatingOptions?: boolean
+  repeatingOptions?: boolean,
+  photosAttached?: boolean
 ): string {
   let content = `Customer says: "${message}"`;
 
@@ -578,6 +595,10 @@ function buildUserMessage(
     content += `
 
 You still do not know their mattress SIZE, and you cannot show products without it. React to what they just said, then work the size question into this reply. Do not book a visit or keep gathering other details instead.`;
+  }
+
+  if (photosAttached) {
+    content += `\n\nPHOTOS OF THESE PRODUCTS ARE ATTACHED TO THIS MESSAGE. They asked to see them, so hand them over warmly ("here they are") and name what is pictured. Do not tell them to wait until they visit to see what these look like.`;
   }
 
   if (repeatingOptions) {
