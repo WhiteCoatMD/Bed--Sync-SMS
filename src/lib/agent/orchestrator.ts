@@ -623,7 +623,7 @@ YOU HAVE ALREADY SHOWN THESE EXACT OPTIONS. Do NOT list them again — the custo
   if (sizeAfterOptions && !repeatingOptions) {
     content += `
 
-PRESENT THE OPTIONS ABOVE IN THIS MESSAGE — they are what the customer is waiting to see, and every model comes in all sizes. Do not ask for their size instead of showing them. Show the options first, then ask which size they need at the end of the same message.`;
+PRESENT THE OPTIONS ABOVE IN THIS MESSAGE — they are what the customer is waiting to see, and every model comes in all sizes. Do not ask for their size instead of showing them. Show the options first, then ask which size they need at the end of the same message. When you list the sizes, name ALL of them - twin, full, queen and king - never a partial list.`;
   }
 
   if (returningSummary) {
