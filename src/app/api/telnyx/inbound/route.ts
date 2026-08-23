@@ -303,6 +303,13 @@ export async function POST(req: NextRequest) {
       return !!(newer && newer.length > 0);
     };
 
+    // Telnyx bills inbound as well as outbound, so a cap that ignored it
+    // would understate a dealer by roughly half.
+    {
+      const { recordCost, messageCost } = await import('@/lib/cost');
+      await recordCost(dealer.id, 'sms_in', messageCost(body), { length: (body || '').length });
+    }
+
     // Track usage
     await db.from('usage_events').insert({
       dealer_id: dealer.id,
@@ -368,6 +375,36 @@ export async function POST(req: NextRequest) {
       .eq('conversation_id', conversation.id)
       .order('created_at', { ascending: true })
       .limit(20);
+
+    // Spending cap. The customer is never left hanging — the dealer is told
+    // once that the agent is paused, and the conversation waits for a human
+    // rather than quietly running up a bill.
+    {
+      const { getCostState, markCapNotified } = await import('@/lib/cost');
+      const cost = await getCostState(dealer.id);
+      if (cost.overCap) {
+        console.warn(`[Cost] Agent paused for dealer ${dealer.id}: ${cost.costUsd.toFixed(2)} of ${cost.capUsd}`);
+        await db.from('agent_logs').insert({
+          conversation_id: conversation.id,
+          action: 'tool_call',
+          details: { tool: 'cost_cap_reached', cost_usd: cost.costUsd, cap_usd: cost.capUsd },
+        });
+        if (!cost.notifiedAt) {
+          const notify = (dealer.settings as unknown as Record<string, unknown> | null)?.lead_notify_phone as string | undefined
+            || dealer.owner_phone || undefined;
+          if (notify) {
+            const { sendSms } = await import('@/lib/sms');
+            await sendSms(
+              String(notify),
+              `Heads up: your AI assistant has reached this month’s ${cost.capUsd} usage limit, so it has paused replying. New texts are still saved in your dashboard — reply to your customers there, or contact Bed Sync to raise the limit.`,
+              dealer.twilio_phone || undefined
+            );
+          }
+          await markCapNotified(dealer.id);
+        }
+        return NextResponse.json({ ok: true, paused: 'cost_cap' });
+      }
+    }
 
     // Cheap check before spending a model call on a message already corrected.
     if (await supersededBy()) {

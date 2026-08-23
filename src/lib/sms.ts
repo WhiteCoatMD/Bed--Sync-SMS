@@ -1,5 +1,6 @@
 import { telnyxRequest } from './telnyx';
 import { getServiceClient } from './supabase';
+import { messageCost, recordCost } from './cost';
 
 const TELNYX_MESSAGING_PROFILE_ID = process.env.TELNYX_MESSAGING_PROFILE_ID;
 
@@ -69,6 +70,15 @@ export async function sendAndTrack(
     twilio_sid: messageId,
     metadata: mediaUrls?.length ? { media_urls: mediaUrls } : {},
   });
+
+  // Meter what this send actually costs (MMS and multi-segment replies cost
+  // several times a short SMS, so counting messages would understate it).
+  await recordCost(
+    dealerId,
+    mediaUrls?.length ? 'mms_out' : 'sms_out',
+    messageCost(body, mediaUrls?.length || 0),
+    { segments: body.length, media: mediaUrls?.length || 0 }
+  );
 
   // Update conversation message count
   await db.rpc('increment_message_count', { conv_id: conversationId });

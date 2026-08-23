@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { getServiceClient } from '../supabase';
+import { llmCost, recordCost } from '../cost';
 import { buildSystemPrompt } from './system-prompt';
 import { canTransition, shouldAutoHandoff, checkHotLeadAlert } from './state-machine';
 import { isDatetimeWithinHours, zonedWallClockToUtcIso } from '../business-hours';
@@ -283,6 +284,14 @@ export async function processMessage(
         const rawBlock = completion.content[0];
         rawText = rawBlock?.type === 'text' ? rawBlock.text : null;
         modelUsed = 'claude-haiku-4-5-20251001';
+        // Token usage is the real cost driver — a cached prompt read is a
+        // tenth of fresh input, so bill from usage rather than call count.
+        await recordCost(dealer.id, 'llm', llmCost(completion.usage), {
+          model: modelUsed,
+          input: completion.usage?.input_tokens,
+          output: completion.usage?.output_tokens,
+          cache_read: completion.usage?.cache_read_input_tokens,
+        });
       } catch (anthropicErr) {
         console.error('[Agent] Anthropic error, falling back to OpenAI:', anthropicErr);
       }
