@@ -33,6 +33,14 @@ export const RATES = {
 
 export const DEFAULT_CAP_USD = num(process.env.DEALER_COST_CAP_USD, 25);
 
+/**
+ * The number we publish. Measured cost is ~$0.25 a conversation (roughly 15 SMS
+ * segments, a handful of model turns, a photo message or two), so 100 lands on
+ * the $25 ceiling — the figure on the price sheet and the figure that protects
+ * the margin are deliberately the same number.
+ */
+export const DEFAULT_CONVERSATIONS_INCLUDED = num(process.env.DEALER_CONVERSATIONS_INCLUDED, 100);
+
 export type CostKind = 'sms_out' | 'sms_in' | 'mms_out' | 'llm';
 
 /** SMS bills per segment: 160 chars alone, 153 each when concatenated. */
@@ -72,13 +80,25 @@ interface StoredCost {
   period_start: string;
   cost_usd: number;
   cap_usd: number;
+  /** The published allowance. Dealers buy conversations, not SMS segments. */
+  conversations_used: number;
+  conversations_included: number;
   capped_at: string | null;
   notified_at: string | null;
   breakdown: Partial<Record<CostKind, { count: number; cost_usd: number }>>;
 }
 
-function emptyCost(capUsd = DEFAULT_CAP_USD): StoredCost {
-  return { period_start: currentPeriod(), cost_usd: 0, cap_usd: capUsd, capped_at: null, notified_at: null, breakdown: {} };
+function emptyCost(capUsd = DEFAULT_CAP_USD, included = DEFAULT_CONVERSATIONS_INCLUDED): StoredCost {
+  return {
+    period_start: currentPeriod(),
+    cost_usd: 0,
+    cap_usd: capUsd,
+    conversations_used: 0,
+    conversations_included: included,
+    capped_at: null,
+    notified_at: null,
+    breakdown: {},
+  };
 }
 
 async function readRaw(dealerId: string): Promise<{ settings: Record<string, unknown>; cost: StoredCost }> {
@@ -89,7 +109,13 @@ async function readRaw(dealerId: string): Promise<{ settings: Record<string, unk
 
   // A new billing period resets the meter and releases any pause.
   if (!stored || stored.period_start !== currentPeriod()) {
-    return { settings, cost: emptyCost(stored ? Number(stored.cap_usd) : DEFAULT_CAP_USD) };
+    return {
+      settings,
+      cost: emptyCost(
+        stored ? Number(stored.cap_usd) : DEFAULT_CAP_USD,
+        stored ? Number(stored.conversations_included) : DEFAULT_CONVERSATIONS_INCLUDED
+      ),
+    };
   }
   return { settings, cost: { ...emptyCost(), ...stored } };
 }
@@ -98,6 +124,16 @@ export interface CostState {
   costUsd: number;
   capUsd: number;
   overCap: boolean;
+  conversationsUsed: number;
+  conversationsIncluded: number;
+  /**
+   * Whether a NEW conversation may begin. Deliberately separate from overCap:
+   * a conversation already under way always finishes, whatever the meter says.
+   * Cutting someone off halfway through booking a visit would cost the dealer
+   * the sale and make the product look broken — the few conversations in flight
+   * when the limit lands are worth pennies.
+   */
+  canStartConversation: boolean;
   cappedAt: string | null;
   notifiedAt: string | null;
   periodStart: string;
@@ -108,11 +144,20 @@ export async function getCostState(dealerId: string): Promise<CostState> {
   const { cost } = await readRaw(dealerId);
   const capUsd = Number(cost.cap_usd);
   const costUsd = Number(cost.cost_usd);
+  const used = Number(cost.conversations_used || 0);
+  const included = Number(cost.conversations_included || DEFAULT_CONVERSATIONS_INCLUDED);
+
+  // A cap of 0 means unlimited — for a dealer on a different arrangement.
+  const overCap = capUsd > 0 && costUsd >= capUsd;
+  const overAllowance = included > 0 && used >= included;
+
   return {
     costUsd,
     capUsd,
-    // A cap of 0 means unlimited — for a dealer on a different arrangement.
-    overCap: capUsd > 0 && costUsd >= capUsd,
+    overCap,
+    conversationsUsed: used,
+    conversationsIncluded: included,
+    canStartConversation: !overCap && !overAllowance,
     cappedAt: cost.capped_at,
     notifiedAt: cost.notified_at,
     periodStart: cost.period_start,
@@ -161,6 +206,31 @@ export async function recordCost(
   } catch (err) {
     console.error('[Cost] Could not record cost:', err);
   }
+}
+
+/** Count a conversation as it begins. The allowance is spent up front. */
+export async function countConversationStarted(dealerId: string): Promise<void> {
+  try {
+    const { settings, cost } = await readRaw(dealerId);
+    await writeCost(dealerId, settings, {
+      ...cost,
+      conversations_used: Number(cost.conversations_used || 0) + 1,
+    });
+  } catch (err) {
+    console.error('[Cost] Could not count conversation:', err);
+  }
+}
+
+/** Set the published allowance. 0 means unlimited. */
+export async function setConversationsIncluded(dealerId: string, included: number): Promise<CostState> {
+  const { settings, cost } = await readRaw(dealerId);
+  const release = included === 0 || included > Number(cost.conversations_used || 0);
+  await writeCost(dealerId, settings, {
+    ...cost,
+    conversations_included: included,
+    ...(release ? { capped_at: null, notified_at: null } : {}),
+  });
+  return getCostState(dealerId);
 }
 
 /** Say it once, not on every blocked message. */

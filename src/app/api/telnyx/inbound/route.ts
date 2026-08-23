@@ -247,6 +247,28 @@ export async function POST(req: NextRequest) {
       .limit(1)
       .maybeSingle();
 
+    // A conversation is done after 30 days of silence. Without this a customer
+    // who comes back months later lands in the old thread forever, so they are
+    // never counted again and the agent answers as if no time passed.
+    const CONVERSATION_IDLE_DAYS = 30;
+    let startedNewConversation = false;
+    if (conversation) {
+      const { data: lastMsg } = await db
+        .from('messages')
+        .select('created_at')
+        .eq('conversation_id', conversation.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const lastAt = new Date(lastMsg?.created_at || conversation.created_at).getTime();
+      const idleDays = (Date.now() - lastAt) / 86400000;
+      if (idleDays > CONVERSATION_IDLE_DAYS) {
+        await db.from('conversations').update({ status: 'closed' }).eq('id', conversation.id);
+        console.log(`[Telnyx Inbound] Conversation ${conversation.id} idle ${Math.round(idleDays)}d — starting a fresh one`);
+        conversation = null;
+      }
+    }
+
     if (!conversation) {
       // Someone texting back after their last conversation closed. Carry what
       // we learned forward so the agent doesn't greet a familiar customer as a
@@ -269,6 +291,7 @@ export async function POST(req: NextRequest) {
         .select()
         .maybeSingle();
       conversation = newConv;
+      startedNewConversation = !!newConv;
     }
 
     if (!conversation) {
@@ -376,36 +399,52 @@ export async function POST(req: NextRequest) {
       .order('created_at', { ascending: true })
       .limit(20);
 
-    // Spending cap. The customer is never left hanging — the dealer is told
-    // once that the agent is paused, and the conversation waits for a human
-    // rather than quietly running up a bill.
-    {
-      const { getCostState, markCapNotified } = await import('@/lib/cost');
-      const cost = await getCostState(dealer.id);
-      if (cost.overCap) {
-        console.warn(`[Cost] Agent paused for dealer ${dealer.id}: ${cost.costUsd.toFixed(2)} of ${cost.capUsd}`);
+    // Spending limit. This gate refuses to START a conversation; it never
+    // interrupts one. Someone halfway through booking a visit always gets
+    // finished — cutting them off would cost the dealer the sale and make the
+    // product look broken, and the handful in flight when the limit lands are
+    // worth pennies against the ceiling.
+    if (startedNewConversation) {
+      const { getCostState, markCapNotified, countConversationStarted } = await import('@/lib/cost');
+      const limit = await getCostState(dealer.id);
+
+      if (!limit.canStartConversation) {
+        console.warn(
+          `[Cost] New conversation refused for dealer ${dealer.id}: ` +
+          `${limit.conversationsUsed}/${limit.conversationsIncluded} conversations, $${limit.costUsd.toFixed(2)} of $${limit.capUsd}`
+        );
+        await db.from('conversations').update({ status: 'paused' }).eq('id', conversation.id);
         await db.from('agent_logs').insert({
           conversation_id: conversation.id,
           action: 'tool_call',
-          details: { tool: 'cost_cap_reached', cost_usd: cost.costUsd, cap_usd: cost.capUsd },
+          details: {
+            tool: 'monthly_limit_reached',
+            conversations_used: limit.conversationsUsed,
+            conversations_included: limit.conversationsIncluded,
+            cost_usd: limit.costUsd,
+            cap_usd: limit.capUsd,
+          },
         });
-        if (!cost.notifiedAt) {
+
+        if (!limit.notifiedAt) {
           const notify = (dealer.settings as unknown as Record<string, unknown> | null)?.lead_notify_phone as string | undefined
             || dealer.owner_phone || undefined;
           if (notify) {
             const { sendSms } = await import('@/lib/sms');
             await sendSms(
               String(notify),
-              `Heads up: your AI assistant has reached this month’s ${cost.capUsd} usage limit, so it has paused replying. New texts are still saved in your dashboard — reply to your customers there, or contact Bed Sync to raise the limit.`,
+              `You have used all ${limit.conversationsIncluded} AI conversations included this month. New leads are still captured in your dashboard — they just are not being answered automatically. Reply to them there, or contact Bed Sync to add more.`,
               dealer.twilio_phone || undefined
             );
           }
           await markCapNotified(dealer.id);
         }
-        return NextResponse.json({ ok: true, paused: 'cost_cap' });
-      }
-    }
 
+        return NextResponse.json({ ok: true, paused: 'monthly_limit' });
+      }
+
+      await countConversationStarted(dealer.id);
+    }
     // Cheap check before spending a model call on a message already corrected.
     if (await supersededBy()) {
       console.log('[Telnyx Inbound] Newer message arrived — skipping stale reply');
