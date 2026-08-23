@@ -65,14 +65,15 @@ export async function GET(req: NextRequest) {
           series: item.series || null,
           size: mapSize(item.size_display as string),
           firmness: mapFirmness(item.feel as string),
-          type: null,
+          type: mapType(item.type_name as string),
           price: parseFloat(String(item.price || 0)),
           sale_price: null,
           msrp: null,
           in_stock: item.auto_status !== 'sold',
           quantity: 1,
           features: [],
-          description: null,
+          description: (item.notes as string) || null,
+          image_url: (item.image_url as string) || null,
           financing_eligible: true,
           promotion: null,
           sku: item.serial_number || null,
@@ -80,6 +81,18 @@ export async function GET(req: NextRequest) {
         }));
 
         await db.from('inventory').insert(mapped);
+      }
+
+      if (data.notify_phone) {
+        try {
+          const { data: current } = await db.from('dealers').select('settings').eq('id', dealer.id).single();
+          const settings = (current?.settings || {}) as Record<string, unknown>;
+          if (settings.lead_notify_phone !== data.notify_phone) {
+            await db.from('dealers')
+              .update({ settings: { ...settings, lead_notify_phone: data.notify_phone } })
+              .eq('id', dealer.id);
+          }
+        } catch { /* non-fatal */ }
       }
 
       results.push({ dealer: dealer.business_name, synced: items.length });
@@ -95,6 +108,24 @@ export async function GET(req: NextRequest) {
     dealers_synced: results.length,
     results,
   });
+}
+
+/**
+ * Fold a free-text catalog type onto the CHECK-constrained set. Kept in step
+ * with the single-dealer sync deliberately: this route having its own copy of
+ * the mapping is what silently dropped photos and descriptions for months.
+ */
+function mapType(type: string | null | undefined): string | null {
+  if (!type) return null;
+  const t = type.toLowerCase();
+  if (t.includes('hybrid')) return 'hybrid';
+  if (t.includes('euro') || t.includes('pillow')) return 'pillow_top';
+  if (t.includes('gel')) return 'gel_foam';
+  if (t.includes('memory') || t.includes('foam')) return 'memory_foam';
+  if (t.includes('latex')) return 'latex';
+  if (t.includes('innerspring') || t.includes('coil')) return 'innerspring';
+  if (t.includes('adjust')) return 'adjustable';
+  return null;
 }
 
 function mapSize(size: string | null | undefined): string {

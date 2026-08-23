@@ -110,6 +110,24 @@ export async function POST(req: NextRequest) {
 
     const items = inventoryData.inventory || [];
 
+    // Keep the dealer's lead-alert number in step with the main app. Leads the
+    // agent creates itself (someone texting in cold) have no main-app request to
+    // carry it, so it has to live on the dealer record.
+    if (inventoryData.notify_phone) {
+      try {
+        const { data: current } = await db.from('dealers').select('settings').eq('id', dealer_id).single();
+        const settings = (current?.settings || {}) as Record<string, unknown>;
+        if (settings.lead_notify_phone !== inventoryData.notify_phone) {
+          await db.from('dealers')
+            .update({ settings: { ...settings, lead_notify_phone: inventoryData.notify_phone } })
+            .eq('id', dealer_id);
+          console.log('[Inventory Sync] Updated lead alert number for dealer', dealer_id);
+        }
+      } catch (notifyErr) {
+        console.warn('[Inventory Sync] Could not store lead alert number:', notifyErr);
+      }
+    }
+
     // Clear existing inventory for this dealer
     await db.from('inventory').delete().eq('dealer_id', dealer_id);
 
