@@ -88,7 +88,7 @@ export function extractQualificationSignals(
   // Sleep position
   if (/\b(side sleeper|sleep on.* side|side)\b/.test(lower)) {
     updates.sleeping_position = 'side';
-  } else if (/\b(back sleeper|sleep on.* back|back)\b/.test(lower) && lower.includes('sleep')) {
+  } else if (/\b(back sleeper|sleep on.* back|on my back)\b/.test(lower)) {
     updates.sleeping_position = 'back';
   } else if (/\b(stomach sleeper|sleep on.* stomach|stomach)\b/.test(lower)) {
     updates.sleeping_position = 'stomach';
