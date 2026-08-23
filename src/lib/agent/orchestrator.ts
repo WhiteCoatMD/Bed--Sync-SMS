@@ -111,14 +111,17 @@ export async function processMessage(
   // require the qualifying state — one live conversation never left 'greeting'
   // (the model simply never proposed a transition), so a state-gated search
   // never ran and the customer was never shown a single product.
-  // Show product options WITHOUT being asked. Waiting for either a clear
-  // qualification signal or a direct request meant customers could go a whole
-  // conversation seeing nothing — the agent would keep asking questions and
-  // then push a visit. Once they have said anything at all beyond the opening
-  // message, put real products (and their photos) in front of them.
+  // Backstop for showing product options WITHOUT being asked.
+  //
+  // The normal route is hasEnoughToRecommend: the moment we learn how they
+  // sleep (or their size), we recommend — which is what we want, since the
+  // options should follow understanding their problem, not precede it. But a
+  // customer who answers vaguely could go a whole conversation seeing nothing
+  // while the agent kept asking questions and then pushed a visit. So after a
+  // few exchanges with nothing learned, show them products anyway.
   const inboundSoFar = recentMessages.filter((m) => m.direction === 'inbound').length + 1;
   const nothingShownYet = !(updatedContext.models_shown && updatedContext.models_shown.length > 0);
-  const showProactively = nothingShownYet && inboundSoFar >= 3;
+  const showProactively = nothingShownYet && inboundSoFar >= 5;
 
   const needsInventory = wantsProducts || (
     !saleMovedOffText && (
