@@ -78,6 +78,7 @@ export async function processMessage(
   let inventoryContext = '';
   let recommendations: ReturnType<typeof generateRecommendations> = [];
   let recommendationImageUrls: string[] = [];
+  let outOfStockSize: string | null = null;
 
   // Skip once the sale has moved off text — a booked visit or a human takeover
   // means the catalog no longer needs to ride along in every prompt.
@@ -107,6 +108,11 @@ export async function processMessage(
     // agent; the flag just switches the prompt into "no pricing" mode (describe
     // the options, never quote a price, drive them to come in). This is how MBA
     // dealers run it — pricing happens in-store / with a rep.
+
+    // Nothing in the size they asked for. Without saying so the agent just goes
+    // quiet about products and pivots to booking a visit, which reads as if it
+    // ignored the question.
+    outOfStockSize = items.length === 0 ? (updatedContext.mattress_size || null) : null;
 
     inventoryContext = formatInventoryForAgent(items);
     recommendations = generateRecommendations(items, updatedContext);
@@ -171,7 +177,7 @@ export async function processMessage(
     && /(size|twin|full|queen|king|cal king)/i.test(lastOutbound.body);
   const missingSize = !updatedContext.mattress_size && !bookedAppointment
     && currentState === 'qualifying' && !alreadyAskedSize;
-  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness, bookedAppointment, missingSize);
+  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness, bookedAppointment, missingSize, outOfStockSize);
 
   try {
     let rawText: string | null = null;
@@ -482,7 +488,8 @@ function buildUserMessage(
   pendingHandoffBusiness?: string,
   noPricingBusiness?: string,
   bookedAppointment?: string,
-  missingSize?: boolean
+  missingSize?: boolean,
+  outOfStockSize?: string | null
 ): string {
   let content = `Customer says: "${message}"`;
 
@@ -508,6 +515,12 @@ function buildUserMessage(
     content += `
 
 You still do not know their mattress SIZE, and you cannot show products without it. React to what they just said, then work the size question into this reply. Do not book a visit or keep gathering other details instead.`;
+  }
+
+  if (outOfStockSize) {
+    content += `
+
+OUT OF STOCK: you have nothing in ${outOfStockSize.replace(/_/g, ' ')} on the floor right now. Say so plainly — do not invent products, and do not go quiet about it and pivot to booking as if they never asked. Offer to check another size, or invite them in to see what is there.`;
   }
 
   if (bookedAppointment) {
