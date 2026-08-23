@@ -80,6 +80,12 @@ export async function processMessage(
   let recommendationImageUrls: string[] = [];
   let outOfStockSize: string | null = null;
 
+  // "what do you have", "show me", "can I see them" — a direct ask for products
+  // must always produce products. Waiting on a size we haven't been given is
+  // how the agent ends up answering "sure, what do you have?" with nothing.
+  const wantsProducts = /\b(what (do )?(you|ya|yall|y'all) (have|got|carry)|what('| i)?s available|show me|see (them|some|what)|(any )?options|what do you got|recommend)/i
+    .test(inboundMessage);
+
   // Skip once the sale has moved off text — a booked visit or a human takeover
   // means the catalog no longer needs to ride along in every prompt.
   const saleMovedOffText = !!bookedAppointment
@@ -89,11 +95,12 @@ export async function processMessage(
 
   const needsInventory = !saleMovedOffText && (
     currentState === 'recommending' ||
+    wantsProducts ||
     (currentState === 'qualifying' && hasEnoughToRecommend(updatedContext))
   );
 
   if (needsInventory) {
-    const items = await searchInventory({
+    let items = await searchInventory({
       dealer_id: dealer.id,
       size: updatedContext.mattress_size || undefined,
       firmness: updatedContext.firmness || undefined,
@@ -113,6 +120,18 @@ export async function processMessage(
     // quiet about products and pivots to booking a visit, which reads as if it
     // ignored the question.
     outOfStockSize = items.length === 0 ? (updatedContext.mattress_size || null) : null;
+
+    // With no size filter the same model comes back once per size. Show each
+    // model once so the agent doesn't list "Mystical Copper" four times.
+    if (!updatedContext.mattress_size) {
+      const seenModel = new Set<string>();
+      items = items.filter((item) => {
+        const key = (item.model || item.sku || item.id).toLowerCase();
+        if (seenModel.has(key)) return false;
+        seenModel.add(key);
+        return true;
+      });
+    }
 
     inventoryContext = formatInventoryForAgent(items);
     recommendations = generateRecommendations(items, updatedContext);
@@ -174,10 +193,23 @@ export async function processMessage(
   // asked, react to what they actually said instead of asking a third time.
   const lastOutbound = [...recentMessages].reverse().find((m) => m.direction === 'outbound');
   const alreadyAskedSize = !!lastOutbound
-    && /(size|twin|full|queen|king|cal king)/i.test(lastOutbound.body);
+    && /\b(size|twin|full|queen|king|cal king)\b/i.test(lastOutbound.body);
+  // Only worth saying on the opening exchange of the new conversation; after
+  // that the history speaks for itself.
+  const returningSummary = !recentMessages.some((m) => m.direction === 'outbound')
+    ? updatedContext.returning_summary || undefined
+    : undefined;
+
+  // Never let the size question outrank actually showing products. If we have
+  // options in hand, present them and confirm the size afterwards — chasing the
+  // size first is exactly how "sure, what do you have?" got answered with
+  // another question.
   const missingSize = !updatedContext.mattress_size && !bookedAppointment
-    && currentState === 'qualifying' && !alreadyAskedSize;
-  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness, bookedAppointment, missingSize, outOfStockSize);
+    && currentState === 'qualifying' && !alreadyAskedSize
+    && recommendations.length === 0;
+
+  const sizeAfterOptions = !updatedContext.mattress_size && recommendations.length > 0;
+  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness, bookedAppointment, missingSize, outOfStockSize, returningSummary, sizeAfterOptions);
 
   try {
     let rawText: string | null = null;
@@ -420,7 +452,11 @@ export async function processMessage(
       reply: ensureBusinessIntro(
         parsed.reply || "I'm sorry, could you say that again?",
         dealer.business_name,
-        recentMessages
+        recentMessages,
+        // A returning customer is on the same phone thread as last time, so
+        // they can see who we are — announcing the store again reads oddly
+        // right after saying we remember them.
+        !!updatedContext.returning_summary
       ),
       media_urls: recommendationImageUrls.length > 0 ? recommendationImageUrls : undefined,
       new_state: handoffCheck.handoff ? 'handed_off' : newState,
@@ -457,7 +493,11 @@ function hasEnoughToRecommend(ctx: ConversationContext): boolean {
     ctx.budget_max || ctx.budget_min || ctx.firmness ||
     ctx.sleeping_position || ctx.mattress_type
   );
-  return !!(ctx.mattress_size && anyNeed);
+  // Size is NOT required. Dealers stock the same models across sizes, so we can
+  // show what fits their sleep needs and confirm the size when they pick one.
+  // Requiring it first meant the agent kept talking without ever showing a
+  // product, because the model would not reliably ask for the size.
+  return !!(ctx.mattress_size || anyNeed);
 }
 
 function buildChatHistory(
@@ -489,7 +529,9 @@ function buildUserMessage(
   noPricingBusiness?: string,
   bookedAppointment?: string,
   missingSize?: boolean,
-  outOfStockSize?: string | null
+  outOfStockSize?: string | null,
+  returningSummary?: string,
+  sizeAfterOptions?: boolean
 ): string {
   let content = `Customer says: "${message}"`;
 
@@ -515,6 +557,18 @@ function buildUserMessage(
     content += `
 
 You still do not know their mattress SIZE, and you cannot show products without it. React to what they just said, then work the size question into this reply. Do not book a visit or keep gathering other details instead.`;
+  }
+
+  if (sizeAfterOptions) {
+    content += `
+
+PRESENT THE OPTIONS ABOVE IN THIS MESSAGE — they are what the customer is waiting to see, and every model comes in all sizes. Do not ask for their size instead of showing them. Show the options first, then ask which size they need at the end of the same message.`;
+  }
+
+  if (returningSummary) {
+    content += `
+
+${returningSummary}`;
   }
 
   if (outOfStockSize) {
@@ -558,10 +612,11 @@ function getHandoffMessage(businessName: string, reason: string): string {
 export function ensureBusinessIntro(
   reply: string,
   businessName: string | null | undefined,
-  recentMessages: Message[]
+  recentMessages: Message[],
+  isReturning?: boolean
 ): string {
   const name = (businessName || '').trim();
-  if (!name || !reply) return reply;
+  if (!name || !reply || isReturning) return reply;
 
   const alreadySpoken = recentMessages.some((m) => m.direction === 'outbound');
   if (alreadySpoken) return reply;

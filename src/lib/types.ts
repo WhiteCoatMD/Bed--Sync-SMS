@@ -163,6 +163,8 @@ export interface ConversationContext {
   objections: string[];
   recommendations_shown: string[];
   agent_notes: string[];
+  /** Set when this conversation continues from an earlier one (see agent/returning.ts). */
+  returning_summary?: string | null;
 }
 
 export interface Message {

@@ -248,6 +248,15 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (!conversation) {
+      // Someone texting back after their last conversation closed. Carry what
+      // we learned forward so the agent doesn't greet a familiar customer as a
+      // stranger and re-ask their size and sleep position.
+      const { getPriorHistory, describePriorHistory } = await import('@/lib/agent/returning');
+      const prior = await getPriorHistory(db, lead.id);
+      const seededContext = prior
+        ? { ...prior.seed, returning_summary: describePriorHistory(prior.seed, prior.lastContactAt) }
+        : {};
+
       const { data: newConv } = await db
         .from('conversations')
         .insert({
@@ -255,6 +264,7 @@ export async function POST(req: NextRequest) {
           dealer_id: dealer.id,
           status: 'active',
           agent_state: 'greeting',
+          context: seededContext,
         })
         .select()
         .maybeSingle();

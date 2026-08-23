@@ -57,6 +57,19 @@ export async function POST(req: NextRequest) {
     if (existingLead) {
       lead = existingLead as Lead;
 
+      // They filled the form in again, possibly with a different name or
+      // email. Take the newer details — otherwise the agent keeps calling them
+      // by whatever name it learned the first time.
+      const freshDetails: Record<string, unknown> = {};
+      if (customer_name && customer_name.trim() && customer_name.trim() !== lead.customer_name) {
+        freshDetails.customer_name = customer_name.trim();
+      }
+      if (email && email !== lead.email) freshDetails.email = email;
+      if (Object.keys(freshDetails).length > 0) {
+        await db.from('leads').update(freshDetails).eq('id', lead.id);
+        lead = { ...lead, ...freshDetails } as Lead;
+      }
+
       // Check for existing active conversation
       const { data: existingConv } = await db
         .from('conversations')
@@ -69,8 +82,26 @@ export async function POST(req: NextRequest) {
 
       if (existingConv) {
         conversation = existingConv as Conversation;
+        // Keep the live conversation's idea of who they are in step with the
+        // form they just submitted.
+        if (freshDetails.customer_name) {
+          const merged = { ...((existingConv.context || {}) as object), customer_name: freshDetails.customer_name };
+          await db.from('conversations').update({ context: merged }).eq('id', existingConv.id);
+          conversation = { ...(existingConv as Conversation), context: merged } as Conversation;
+        }
       } else {
-        // Create new conversation for returning lead
+        // Create new conversation for returning lead, carrying forward what we
+        // already learned so the agent doesn't treat them as a stranger.
+        const { getPriorHistory, describePriorHistory } = await import('@/lib/agent/returning');
+        const prior = await getPriorHistory(db, lead.id);
+        const seededContext = prior
+          ? {
+              ...prior.seed,
+              ...(freshDetails.customer_name ? { customer_name: freshDetails.customer_name } : {}),
+              returning_summary: describePriorHistory(prior.seed, prior.lastContactAt),
+            }
+          : {};
+
         const { data: newConv } = await db
           .from('conversations')
           .insert({
@@ -78,6 +109,7 @@ export async function POST(req: NextRequest) {
             dealer_id: dealer_id,
             status: 'active',
             agent_state: 'greeting',
+            context: seededContext,
           })
           .select()
           .single();
