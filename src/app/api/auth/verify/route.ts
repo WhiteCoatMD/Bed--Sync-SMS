@@ -99,12 +99,30 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Usage rides along on the call the dashboard already makes, so the strip
+    // needs no second request and inherits this route's authentication rather
+    // than exposing a dealer's numbers on a bare dealer_id.
+    let usage = null;
+    try {
+      const { getCostState } = await import('@/lib/cost');
+      const state = await getCostState(dealer.id);
+      usage = {
+        conversations_used: state.conversationsUsed,
+        conversations_included: state.conversationsIncluded,
+        accepting_new: state.canStartConversation,
+        period_start: state.periodStart,
+      };
+    } catch (usageErr) {
+      console.error('[Auth Verify] Usage lookup failed:', usageErr);
+    }
+
     return NextResponse.json({
       success: true,
       dealer_id: dealer.id,
       business_name: dealer.business_name,
       bedsync_user_id: bedsyncUserId,
       viewing_as_admin: viewingAsAdmin,
+      usage,
     });
 
   } catch (err) {

@@ -65,6 +65,13 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [dealerId, setDealerId] = useState<string | null>(null);
   const [businessName, setBusinessName] = useState<string>('');
+  // Included-conversation usage, so a dealer can see where they stand instead
+  // of finding out by getting a text saying they have run out.
+  const [usage, setUsage] = useState<{
+    conversations_used: number;
+    conversations_included: number;
+    accepting_new: boolean;
+  } | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'updated' | 'score' | 'messages'>('updated');
   const [acknowledging, setAcknowledging] = useState<string | null>(null);
@@ -149,6 +156,7 @@ export default function AdminDashboard() {
       if (data.success && data.dealer_id) {
         setDealerId(data.dealer_id);
         setBusinessName(data.business_name || '');
+        setUsage(data.usage || null);
       } else {
         setAuthError(data.error || 'SMS agent not enabled for this account.');
       }
@@ -224,6 +232,36 @@ export default function AdminDashboard() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Conversations</h1>
           {businessName && <p className="text-sm text-gray-500">{businessName}</p>}
+          {usage && usage.conversations_included > 0 && (() => {
+            const pct = Math.min(100, Math.round((usage.conversations_used / usage.conversations_included) * 100));
+            const spent = !usage.accepting_new;
+            const low = !spent && pct >= 80;
+            const barColor = spent ? "bg-red-500" : low ? "bg-amber-500" : "bg-brand-500";
+            const textColor = spent ? "text-red-700" : low ? "text-amber-700" : "text-gray-500";
+            return (
+              <div className="mt-1.5 max-w-xs">
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 flex-1 rounded-full bg-gray-200 overflow-hidden">
+                    <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className={`text-xs whitespace-nowrap ${textColor}`}>
+                    {usage.conversations_used}/{usage.conversations_included} conversations
+                  </span>
+                </div>
+                {spent && (
+                  <p className="mt-1 text-xs text-red-700">
+                    You have used this month’s included conversations. New leads are still
+                    captured here — reply to them yourself, or contact Bed Sync to add more.
+                  </p>
+                )}
+                {low && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    Approaching your monthly limit.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
         </div>
         <div className="flex items-center gap-3">
           {/* Search */}

@@ -15,6 +15,7 @@ interface DealerData {
 
 export default function SettingsPage() {
   const [dealer, setDealer] = useState<DealerData | null>(null);
+  const [usage, setUsage] = useState<{ conversations_used: number; conversations_included: number } | null>(null);
   const [dealerId, setDealerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -79,6 +80,7 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.success && data.dealer_id) {
         setDealerId(data.dealer_id);
+        setUsage(data.usage || null);
         loadSettings(data.dealer_id);
       } else {
         setAuthError('SMS agent not enabled for this account.');
@@ -211,7 +213,9 @@ export default function SettingsPage() {
           <div className="font-semibold">{dealer.business_name}</div>
           <div className="text-sm text-gray-600">
             {dealer.twilio_phone || 'No phone assigned'} | {dealer.plan} plan |{' '}
-            {dealer.messages_used}/{dealer.messages_included} messages used
+            {usage
+              ? `${usage.conversations_used}/${usage.conversations_included} conversations used this month`
+              : 'usage unavailable'}
           </div>
         </div>
       )}
