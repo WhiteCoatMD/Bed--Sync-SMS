@@ -161,7 +161,17 @@ export async function processMessage(
   );
 
   const noPricingBusiness = !dealerQuotesPrices ? dealer.business_name : undefined;
-  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness, bookedAppointment);
+  // Hard nudge: without a size the recommend gate can never open, so the agent
+  // can talk forever and never show a product. One live conversation booked a
+  // visit having never shown a single mattress because size was never asked.
+  // ...but don't open with it, and don't nag: if the last thing we sent already
+  // asked, react to what they actually said instead of asking a third time.
+  const lastOutbound = [...recentMessages].reverse().find((m) => m.direction === 'outbound');
+  const alreadyAskedSize = !!lastOutbound
+    && /(size|twin|full|queen|king|cal king)/i.test(lastOutbound.body);
+  const missingSize = !updatedContext.mattress_size && !bookedAppointment
+    && currentState === 'qualifying' && !alreadyAskedSize;
+  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness, bookedAppointment, missingSize);
 
   try {
     let rawText: string | null = null;
@@ -471,7 +481,8 @@ function buildUserMessage(
   recommendations: ReturnType<typeof generateRecommendations>,
   pendingHandoffBusiness?: string,
   noPricingBusiness?: string,
-  bookedAppointment?: string
+  bookedAppointment?: string,
+  missingSize?: boolean
 ): string {
   let content = `Customer says: "${message}"`;
 
@@ -491,6 +502,12 @@ function buildUserMessage(
 
   if (noPricingBusiness) {
     content += `\n\nPRICING POLICY (important): ${noPricingBusiness} does not quote prices over text — pricing is given in person so customers come in or talk to a rep. You MAY describe the specific options above (name, feel, type, standout features) and why they'd fit, but NEVER state, quote, estimate, or hint at any price, and never say "$0", "contact us", or "call for price". For pricing, warmly steer them to come in and try the mattresses (or talk to a rep), and offer to set up a showroom visit — e.g. "The best way to get real pricing and actually feel the difference is to come try them — want me to set up a time for you to come in?" Sound confident; never apologize or suggest info is missing. Do NOT ask what their budget is, and if they volunteer a number do not confirm, agree to, or repeat it back as something that works — acknowledge warmly and move on to getting them in to try the mattresses.`;
+  }
+
+  if (missingSize) {
+    content += `
+
+You still do not know their mattress SIZE, and you cannot show products without it. React to what they just said, then work the size question into this reply. Do not book a visit or keep gathering other details instead.`;
   }
 
   if (bookedAppointment) {

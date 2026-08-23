@@ -122,14 +122,15 @@ export async function POST(req: NextRequest) {
         series: item.series || null,
         size: mapSize(item.size_display as string),
         firmness: mapFirmness(item.feel as string),
-        type: null,
+        type: mapType(item.type_name as string),
         price: parseFloat(String(item.price || 0)),
         sale_price: null,
         msrp: null,
         in_stock: item.auto_status !== 'sold',
         quantity: 1,
         features: [],
-        description: null,
+        description: (item.notes as string) || null,
+        image_url: (item.image_url as string) || null,
         financing_eligible: true,
         promotion: null,
         sku: item.serial_number || null,
@@ -184,6 +185,11 @@ function mapType(type: string | null | undefined): string | null {
   if (!type) return null;
   const t = type.toLowerCase();
   if (t.includes('hybrid')) return 'hybrid';
+  // Euro top is a pillow-top construction, and it is common in real catalogs —
+  // without this it fell through to null.
+  if (t.includes('euro') || t.includes('pillow')) return 'pillow_top';
+  // Check gel before the generic "foam" test, or "Gel Foam" lands on memory_foam.
+  if (t.includes('gel')) return 'gel_foam';
   if (t.includes('memory') || t.includes('foam')) return 'memory_foam';
   if (t.includes('latex')) return 'latex';
   if (t.includes('innerspring') || t.includes('coil')) return 'innerspring';
