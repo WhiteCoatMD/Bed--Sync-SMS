@@ -70,6 +70,7 @@ export async function processMessage(
     .gt('scheduled_at', new Date().toISOString())
     .order('scheduled_at', { ascending: true })
     .limit(1);
+  const bookedType = bookedRows && bookedRows[0] ? bookedRows[0].type : null;
   const bookedAppointment = bookedRows && bookedRows[0]
     ? describeAppointment(bookedRows[0].type, bookedRows[0].scheduled_at, dealer.settings.timezone)
     : undefined;
@@ -79,6 +80,8 @@ export async function processMessage(
   let recommendations: ReturnType<typeof generateRecommendations> = [];
   let recommendationImageUrls: string[] = [];
   let outOfStockSize: string | null = null;
+  let newModels: string[] = [];
+  let repeatingOptions = false;
 
   // "what do you have", "show me", "can I see them" — a direct ask for products
   // must always produce products. Waiting on a size we haven't been given is
@@ -139,13 +142,23 @@ export async function processMessage(
     // Collect image URLs from recommended items for MMS
     if (recommendations.length > 0) {
       const recIds = new Set(recommendations.map(r => r.inventory_id));
-      // Only photograph products they haven't been sent yet. Re-attaching the
-      // same images on every follow-up message is spam, and every MMS costs.
-      const alreadySent = new Set(updatedContext.recommendations_shown || []);
+      // Track by MODEL, not row id: every model exists once per size, so once
+      // the customer tells us their size the same product comes back as a
+      // different row and they get the same photos a second time.
+      const shownModels = new Set((updatedContext.models_shown || []).map(m => m.toLowerCase()));
       recommendationImageUrls = items
-        .filter(item => recIds.has(item.id) && item.image_url && !alreadySent.has(item.id))
+        .filter(item => recIds.has(item.id) && item.image_url
+          && !shownModels.has(String(item.model || '').toLowerCase()))
         .map(item => item.image_url!)
         .slice(0, 3); // Telnyx MMS limit
+
+      // Everything we are about to recommend has already been presented — say
+      // so, rather than listing the same three products again.
+      newModels = items
+        .filter(item => recIds.has(item.id))
+        .map(item => String(item.model || ''))
+        .filter(m => m && !shownModels.has(m.toLowerCase()));
+      repeatingOptions = newModels.length === 0 && recommendations.length > 0;
     }
 
     // Log inventory search
@@ -209,7 +222,7 @@ export async function processMessage(
     && recommendations.length === 0;
 
   const sizeAfterOptions = !updatedContext.mattress_size && recommendations.length > 0;
-  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness, bookedAppointment, missingSize, outOfStockSize, returningSummary, sizeAfterOptions);
+  const userContent = buildUserMessage(inboundMessage, inventoryContext, recommendations, handoffCheck.handoff ? dealer.business_name : undefined, noPricingBusiness, bookedAppointment, missingSize, outOfStockSize, returningSummary, sizeAfterOptions, repeatingOptions);
 
   try {
     let rawText: string | null = null;
@@ -324,6 +337,11 @@ export async function processMessage(
           reason: rec.why_it_fits,
         });
       }
+
+      allContextUpdates.models_shown = Array.from(new Set([
+        ...(updatedContext.models_shown || []),
+        ...newModels,
+      ]));
 
       allContextUpdates.recommendations_shown = Array.from(new Set([
         ...(updatedContext.recommendations_shown || []),
@@ -449,7 +467,7 @@ export async function processMessage(
     }
 
     return {
-      reply: ensureBusinessIntro(
+      reply: stripCallLanguageForVisit(ensureBusinessIntro(
         parsed.reply || "I'm sorry, could you say that again?",
         dealer.business_name,
         recentMessages,
@@ -457,7 +475,9 @@ export async function processMessage(
         // they can see who we are — announcing the store again reads oddly
         // right after saying we remember them.
         !!updatedContext.returning_summary
-      ),
+      ), parsed.schedule_appointment && !parsed.schedule_appointment.cancel
+        ? (parsed.schedule_appointment.type || bookedType)
+        : bookedType),
       media_urls: recommendationImageUrls.length > 0 ? recommendationImageUrls : undefined,
       new_state: handoffCheck.handoff ? 'handed_off' : newState,
       context_updates: allContextUpdates,
@@ -531,7 +551,8 @@ function buildUserMessage(
   missingSize?: boolean,
   outOfStockSize?: string | null,
   returningSummary?: string,
-  sizeAfterOptions?: boolean
+  sizeAfterOptions?: boolean,
+  repeatingOptions?: boolean
 ): string {
   let content = `Customer says: "${message}"`;
 
@@ -559,7 +580,13 @@ function buildUserMessage(
 You still do not know their mattress SIZE, and you cannot show products without it. React to what they just said, then work the size question into this reply. Do not book a visit or keep gathering other details instead.`;
   }
 
-  if (sizeAfterOptions) {
+  if (repeatingOptions) {
+    content += `
+
+YOU HAVE ALREADY SHOWN THESE EXACT OPTIONS. Do NOT list them again — the customer has them. Answer what they just said, refer to the options by name only if it helps, and move the conversation forward.`;
+  }
+
+  if (sizeAfterOptions && !repeatingOptions) {
     content += `
 
 PRESENT THE OPTIONS ABOVE IN THIS MESSAGE — they are what the customer is waiting to see, and every model comes in all sizes. Do not ask for their size instead of showing them. Show the options first, then ask which size they need at the end of the same message.`;
@@ -609,6 +636,21 @@ function getHandoffMessage(businessName: string, reason: string): string {
  * outbound message of a conversation. Slots in after an opening "Hey!" when
  * there is one, otherwise leads with it.
  */
+/**
+ * The prompt carries a scripted call confirmation ("someone will call you [day] at [time]"), and the model reaches for it even when the customer is
+ * driving to the store — producing "someone will call you Monday at 11. See
+ * you then!". Wording alone did not stop it, so drop the offending sentence
+ * when we know the booking is a visit.
+ */
+export function stripCallLanguageForVisit(reply: string, type: string | null | undefined): string {
+  if (!reply || type !== 'showroom_visit') return reply;
+  const callish = /(call(s|ing)? you|give you a call|reach out by phone|phone call)/i;
+  const sentences = reply.match(/[^.!?]+[.!?]*/g);
+  if (!sentences) return reply;
+  const kept = sentences.filter((part) => !callish.test(part));
+  const cleaned = kept.join('').replace(/\s{2,}/g, ' ').trim();
+  return cleaned.length > 0 ? cleaned : reply;
+}
 export function ensureBusinessIntro(
   reply: string,
   businessName: string | null | undefined,

@@ -41,6 +41,15 @@ export function generateRecommendations(
 function scoreItem(item: InventoryItem, ctx: ConversationContext): number {
   let score = 50; // base
 
+  // Stay with the products we already recommended. Re-scoring from scratch as
+  // new details arrive quietly swaps one model for another, so the customer
+  // gets a second list that is almost but not quite the first one.
+  if (ctx.models_shown && item.model && ctx.models_shown.some(
+    (m) => m.toLowerCase() === item.model.toLowerCase()
+  )) {
+    score += 15;
+  }
+
   const effectivePrice = item.sale_price || item.price;
 
   // Size match (critical)

@@ -165,6 +165,8 @@ export interface ConversationContext {
   agent_notes: string[];
   /** Set when this conversation continues from an earlier one (see agent/returning.ts). */
   returning_summary?: string | null;
+  /** Model names already presented. Tracked by model because each one exists once per size. */
+  models_shown?: string[];
 }
 
 export interface Message {
