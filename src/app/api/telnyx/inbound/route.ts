@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
 import { processMessage } from '@/lib/agent/orchestrator';
+import { verifyTelnyxSignature } from '@/lib/webhook-verify';
 import { sendAndTrack } from '@/lib/sms';
 import { scheduleFollowUp } from '@/lib/agent/followup';
 import { triggerHandoff } from '@/lib/agent/handoff';
@@ -14,7 +15,20 @@ import type { Conversation, Lead, Dealer, Message, DealerSettings } from '@/lib/
  */
 export async function POST(req: NextRequest) {
   try {
-    const payload = await req.json();
+    // Read the body as text and verify BEFORE parsing: Telnyx signs the raw
+    // bytes, and re-serialising parsed JSON will not reproduce them.
+    const rawBody = await req.text();
+    const verdict = verifyTelnyxSignature(
+      rawBody,
+      req.headers.get('telnyx-signature-ed25519'),
+      req.headers.get('telnyx-timestamp')
+    );
+    if (!verdict.ok) {
+      console.warn(`[Telnyx Inbound] Rejected unverified webhook: ${verdict.reason}`);
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
+    }
+
+    const payload = JSON.parse(rawBody);
 
     // Telnyx sends events in data.payload format
     const event = payload.data;
