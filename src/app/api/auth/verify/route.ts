@@ -123,6 +123,9 @@ export async function POST(req: NextRequest) {
       bedsync_user_id: bedsyncUserId,
       viewing_as_admin: viewingAsAdmin,
       usage,
+      // The store's own timezone. Appointment times must be shown in it —
+      // that is when the customer walks in, and what the agent told them.
+      timezone: (dealer.settings as { timezone?: string } | null)?.timezone || 'America/Chicago',
     });
 
   } catch (err) {

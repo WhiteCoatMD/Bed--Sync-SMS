@@ -37,6 +37,9 @@ export default function AppointmentsPage() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [view, setView] = useState<'upcoming' | 'past'>('upcoming');
   const [updating, setUpdating] = useState<string | null>(null);
+  // Store timezone, so a dealer viewing from another zone (or a franchisor,
+  // or a travelling owner) still sees the time the customer will arrive.
+  const [timezone, setTimezone] = useState<string | undefined>(undefined);
 
   useEffect(() => { authenticate(); }, []);
   useEffect(() => { if (dealerId) fetchAppointments(); }, [dealerId, view]);
@@ -61,6 +64,7 @@ export default function AppointmentsPage() {
       });
       const data = await res.json();
       if (data.success && data.dealer_id) {
+        setTimezone(data.timezone || undefined);
         setDealerId(data.dealer_id);
       } else {
         setAuthError('Not authorized.');
@@ -117,7 +121,7 @@ export default function AppointmentsPage() {
   // Group by day
   const grouped: Record<string, Appointment[]> = {};
   appointments.forEach((a) => {
-    const day = new Date(a.scheduled_at).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+    const day = new Date(a.scheduled_at).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', timeZone: timezone });
     if (!grouped[day]) grouped[day] = [];
     grouped[day].push(a);
   });
@@ -167,7 +171,7 @@ export default function AppointmentsPage() {
               <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">{day}</h2>
               <div className="space-y-2">
                 {appts.map((a) => {
-                  const time = new Date(a.scheduled_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                  const time = new Date(a.scheduled_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: timezone });
                   const isActive = a.status === 'scheduled' || a.status === 'confirmed';
                   return (
                     <div
