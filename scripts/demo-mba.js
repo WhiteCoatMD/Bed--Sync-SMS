@@ -203,6 +203,29 @@ async function seed() {
     );
     console.log(`  seeded ${person.name.padEnd(20)} ${person.state.padEnd(13)} ${person.appointment ? 'appointment booked' : ''}`);
   }
+
+  // Closed sales, so the store reads as a working business rather than a
+  // brand-new account with no revenue. These are the figures the franchisor
+  // dashboard sums, so without them the network view shows Demo City at $0.
+  // is_seed = true, which is what drives the "sample data" banner.
+  const SALES = [
+    ['Rebecca Lindqvist', 'rlindqvist@example.com', '5550123311', 1899.00, 6],
+    ['Dwight Abernathy',  'dabernathy@example.com', '5550123312', 1249.00, 12],
+    ['Yolanda Marsh',     'ymarsh@example.com',     '5550123313', 2399.00, 19],
+  ];
+  let revenue = 0;
+  for (const [name, email, phone, amount, daysAgo] of SALES) {
+    await pool.query(
+      `INSERT INTO leads (user_id, customer_name, customer_email, customer_phone, notes,
+                          source, status, sold_amount, is_seed, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,'website','sold',$6,true,
+               NOW() - ($7 || ' days')::interval, NOW() - ($7 || ' days')::interval)`,
+      [MAIN_USER, name, email, phone, 'Booked by the AI agent, closed in store', amount, String(daysAgo)]
+    );
+    revenue += amount;
+  }
+  console.log(`  seeded ${SALES.length} closed sales — ${revenue.toLocaleString()} revenue`);
+
   console.log(`seed: ${CAST.length} conversations, ${appts} upcoming appointments`);
 }
 
