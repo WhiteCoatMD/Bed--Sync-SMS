@@ -170,6 +170,14 @@ async function seed() {
       });
     }
 
+    // The conversation list renders "N msgs" from message_count, which the
+    // app maintains via an RPC on send. Seeding rows directly bypasses that,
+    // so set it here or every demo conversation reads "0 msgs".
+    await fetch(`${U}/rest/v1/conversations?id=eq.${conv.id}`, {
+      method: 'PATCH', headers: h,
+      body: JSON.stringify({ message_count: person.messages.length }),
+    });
+
     await post('agent_logs', {
       conversation_id: conv.id, action: 'message_received',
       details: { source: 'website', is_new: true, demo: true }, created_at: created,
