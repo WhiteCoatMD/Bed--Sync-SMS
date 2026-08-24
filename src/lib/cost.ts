@@ -1,7 +1,7 @@
 import { getServiceClient } from './supabase';
 
 /**
- * What a dealer costs us to run, and the ceiling before the agent stops.
+ * What a dealer costs to run, and the limits that stop it running away.
  *
  * Rates are measured, not guessed:
  *  - Telnyx: averaged from real message detail records (rate + carrier fee).
@@ -10,12 +10,10 @@ import { getServiceClient } from './supabase';
  *    ~0.1x input, cache writes ~1.25x input.
  *
  * Any rate can be overridden by env var, so a carrier or provider price change
- * does not need a deploy.
+ * needs no deploy.
  *
- * STORAGE NOTE: the meter lives in dealers.settings.cost rather than its own
- * table, because this project's database is reachable only through PostgREST —
- * there is no DDL credential. supabase/migrations/006_dealer_costs.sql holds the
- * proper schema for when there is; see readCost() for the trade-off that costs.
+ * Two limits, deliberately separate: conversations_included is the number the
+ * dealer was sold; cap_usd is the margin backstop behind it.
  */
 const num = (v: string | undefined, fallback: number) => {
   const n = v === undefined ? NaN : Number(v);
@@ -34,10 +32,9 @@ export const RATES = {
 export const DEFAULT_CAP_USD = num(process.env.DEALER_COST_CAP_USD, 25);
 
 /**
- * The number we publish. Measured cost is ~$0.25 a conversation (roughly 15 SMS
- * segments, a handful of model turns, a photo message or two), so 100 lands on
- * the $25 ceiling — the figure on the price sheet and the figure that protects
- * the margin are deliberately the same number.
+ * The number we publish. Measured cost is ~$0.25 a conversation, so 100 lands
+ * on the $25 ceiling — the figure on the price sheet and the figure protecting
+ * the margin are deliberately the same.
  */
 export const DEFAULT_CONVERSATIONS_INCLUDED = num(process.env.DEALER_CONVERSATIONS_INCLUDED, 100);
 
@@ -76,50 +73,6 @@ function currentPeriod(): string {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
 }
 
-interface StoredCost {
-  period_start: string;
-  cost_usd: number;
-  cap_usd: number;
-  /** The published allowance. Dealers buy conversations, not SMS segments. */
-  conversations_used: number;
-  conversations_included: number;
-  capped_at: string | null;
-  notified_at: string | null;
-  breakdown: Partial<Record<CostKind, { count: number; cost_usd: number }>>;
-}
-
-function emptyCost(capUsd = DEFAULT_CAP_USD, included = DEFAULT_CONVERSATIONS_INCLUDED): StoredCost {
-  return {
-    period_start: currentPeriod(),
-    cost_usd: 0,
-    cap_usd: capUsd,
-    conversations_used: 0,
-    conversations_included: included,
-    capped_at: null,
-    notified_at: null,
-    breakdown: {},
-  };
-}
-
-async function readRaw(dealerId: string): Promise<{ settings: Record<string, unknown>; cost: StoredCost }> {
-  const db = getServiceClient();
-  const { data } = await db.from('dealers').select('settings').eq('id', dealerId).maybeSingle();
-  const settings = ((data?.settings || {}) as unknown) as Record<string, unknown>;
-  const stored = settings.cost as StoredCost | undefined;
-
-  // A new billing period resets the meter and releases any pause.
-  if (!stored || stored.period_start !== currentPeriod()) {
-    return {
-      settings,
-      cost: emptyCost(
-        stored ? Number(stored.cap_usd) : DEFAULT_CAP_USD,
-        stored ? Number(stored.conversations_included) : DEFAULT_CONVERSATIONS_INCLUDED
-      ),
-    };
-  }
-  return { settings, cost: { ...emptyCost(), ...stored } };
-}
-
 export interface CostState {
   costUsd: number;
   capUsd: number;
@@ -130,24 +83,49 @@ export interface CostState {
    * Whether a NEW conversation may begin. Deliberately separate from overCap:
    * a conversation already under way always finishes, whatever the meter says.
    * Cutting someone off halfway through booking a visit would cost the dealer
-   * the sale and make the product look broken — the few conversations in flight
-   * when the limit lands are worth pennies.
+   * the sale and make the product look broken — the few in flight when the
+   * limit lands are worth pennies.
    */
   canStartConversation: boolean;
   cappedAt: string | null;
   notifiedAt: string | null;
   periodStart: string;
-  breakdown: StoredCost['breakdown'];
 }
 
+/** Read the meter. A row from a previous month reads as a fresh one. */
 export async function getCostState(dealerId: string): Promise<CostState> {
-  const { cost } = await readRaw(dealerId);
-  const capUsd = Number(cost.cap_usd);
-  const costUsd = Number(cost.cost_usd);
-  const used = Number(cost.conversations_used || 0);
-  const included = Number(cost.conversations_included || DEFAULT_CONVERSATIONS_INCLUDED);
+  const db = getServiceClient();
+  const period = currentPeriod();
 
-  // A cap of 0 means unlimited — for a dealer on a different arrangement.
+  const { data } = await db
+    .from('dealer_costs')
+    .select('period_start, cost_usd, cap_usd, conversations_used, conversations_included, capped_at, notified_at')
+    .eq('dealer_id', dealerId)
+    .maybeSingle();
+
+  if (!data) {
+    return {
+      costUsd: 0,
+      capUsd: DEFAULT_CAP_USD,
+      overCap: false,
+      conversationsUsed: 0,
+      conversationsIncluded: DEFAULT_CONVERSATIONS_INCLUDED,
+      canStartConversation: true,
+      cappedAt: null,
+      notifiedAt: null,
+      periodStart: period,
+    };
+  }
+
+  // The stored row still belongs to last month until the next write rolls it
+  // over (record_dealer_cost does that atomically), so treat it as empty here.
+  const rolled = String(data.period_start).slice(0, 10) !== period;
+  const capUsd = Number(data.cap_usd);
+  const included = Number(data.conversations_included);
+  const costUsd = rolled ? 0 : Number(data.cost_usd);
+  const used = rolled ? 0 : Number(data.conversations_used);
+
+  // A cap or allowance of 0 means unlimited — for a dealer on another deal.
   const overCap = capUsd > 0 && costUsd >= capUsd;
   const overAllowance = included > 0 && used >= included;
 
@@ -158,25 +136,18 @@ export async function getCostState(dealerId: string): Promise<CostState> {
     conversationsUsed: used,
     conversationsIncluded: included,
     canStartConversation: !overCap && !overAllowance,
-    cappedAt: cost.capped_at,
-    notifiedAt: cost.notified_at,
-    periodStart: cost.period_start,
-    breakdown: cost.breakdown || {},
+    cappedAt: rolled ? null : data.capped_at,
+    notifiedAt: rolled ? null : data.notified_at,
+    periodStart: period,
   };
-}
-
-async function writeCost(dealerId: string, settings: Record<string, unknown>, cost: StoredCost): Promise<void> {
-  await getServiceClient().from('dealers').update({ settings: { ...settings, cost } }).eq('id', dealerId);
 }
 
 /**
  * Record what something cost. Never throws — a billing meter must not be able
  * to take down a customer conversation.
  *
- * This is a read-modify-write on a JSON column, so two messages landing in the
- * same instant can lose one increment. That undercounts slightly; it does not
- * lose the cap, and the next message re-reads the true stored total. Moving to
- * dealer_costs (migration 006) makes it atomic.
+ * The accrual is one statement (record_dealer_cost), so two messages landing in
+ * the same instant can no longer lose an increment.
  */
 export async function recordCost(
   dealerId: string,
@@ -185,72 +156,77 @@ export async function recordCost(
   details: Record<string, unknown> = {}
 ): Promise<void> {
   if (!dealerId || !(costUsd > 0)) return;
+  const db = getServiceClient();
   try {
-    const { settings, cost } = await readRaw(dealerId);
-    const next: StoredCost = {
-      ...cost,
-      cost_usd: Number((Number(cost.cost_usd) + costUsd).toFixed(6)),
-      breakdown: {
-        ...cost.breakdown,
-        [kind]: {
-          count: (cost.breakdown?.[kind]?.count || 0) + 1,
-          cost_usd: Number(((cost.breakdown?.[kind]?.cost_usd || 0) + costUsd).toFixed(6)),
-        },
-      },
-    };
-    if (next.cap_usd > 0 && next.cost_usd >= next.cap_usd && !next.capped_at) {
-      next.capped_at = new Date().toISOString();
-      console.warn(`[Cost] Dealer ${dealerId} reached the $${next.cap_usd} cap at $${next.cost_usd.toFixed(4)}`, details);
-    }
-    await writeCost(dealerId, settings, next);
+    // Itemised, so a bill can be explained and the rate model checked against
+    // the real Telnyx and Anthropic invoices.
+    await db.from('cost_events').insert({ dealer_id: dealerId, kind, cost_usd: costUsd, details });
+    const { error } = await db.rpc('record_dealer_cost', {
+      d_id: dealerId,
+      amount: costUsd,
+      period: currentPeriod(),
+    });
+    if (error) console.error('[Cost] record_dealer_cost failed:', error);
   } catch (err) {
     console.error('[Cost] Could not record cost:', err);
   }
 }
 
+/** Write the limit columns, preserving whatever is not being changed. */
+async function updateLimits(dealerId: string, patch: Record<string, unknown>): Promise<CostState> {
+  const db = getServiceClient();
+  const state = await getCostState(dealerId);
+  await db.from('dealer_costs').upsert(
+    {
+      dealer_id: dealerId,
+      period_start: state.periodStart,
+      cost_usd: state.costUsd,
+      conversations_used: state.conversationsUsed,
+      cap_usd: state.capUsd,
+      conversations_included: state.conversationsIncluded,
+      ...patch,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'dealer_id' }
+  );
+  return getCostState(dealerId);
+}
+
 /** Count a conversation as it begins. The allowance is spent up front. */
 export async function countConversationStarted(dealerId: string): Promise<void> {
   try {
-    const { settings, cost } = await readRaw(dealerId);
-    await writeCost(dealerId, settings, {
-      ...cost,
-      conversations_used: Number(cost.conversations_used || 0) + 1,
-    });
+    const state = await getCostState(dealerId);
+    await updateLimits(dealerId, { conversations_used: state.conversationsUsed + 1 });
   } catch (err) {
     console.error('[Cost] Could not count conversation:', err);
   }
 }
 
+/** Set the dollar backstop. 0 means unlimited. Raising it releases a pause. */
+export async function setCap(dealerId: string, capUsd: number): Promise<CostState> {
+  const state = await getCostState(dealerId);
+  const release = capUsd === 0 || capUsd > state.costUsd;
+  return updateLimits(dealerId, {
+    cap_usd: capUsd,
+    ...(release ? { capped_at: null, notified_at: null } : {}),
+  });
+}
+
 /** Set the published allowance. 0 means unlimited. */
 export async function setConversationsIncluded(dealerId: string, included: number): Promise<CostState> {
-  const { settings, cost } = await readRaw(dealerId);
-  const release = included === 0 || included > Number(cost.conversations_used || 0);
-  await writeCost(dealerId, settings, {
-    ...cost,
+  const state = await getCostState(dealerId);
+  const release = included === 0 || included > state.conversationsUsed;
+  return updateLimits(dealerId, {
     conversations_included: included,
     ...(release ? { capped_at: null, notified_at: null } : {}),
   });
-  return getCostState(dealerId);
 }
 
 /** Say it once, not on every blocked message. */
 export async function markCapNotified(dealerId: string): Promise<void> {
   try {
-    const { settings, cost } = await readRaw(dealerId);
-    await writeCost(dealerId, settings, { ...cost, notified_at: new Date().toISOString() });
+    await updateLimits(dealerId, { notified_at: new Date().toISOString() });
   } catch (err) {
     console.error('[Cost] Could not mark cap notification:', err);
   }
-}
-
-/** Set a dealer's ceiling. 0 means unlimited. Raising it releases a pause. */
-export async function setCap(dealerId: string, capUsd: number): Promise<CostState> {
-  const { settings, cost } = await readRaw(dealerId);
-  const release = capUsd === 0 || capUsd > Number(cost.cost_usd);
-  await writeCost(dealerId, settings, {
-    ...cost,
-    cap_usd: capUsd,
-    ...(release ? { capped_at: null, notified_at: null } : {}),
-  });
-  return getCostState(dealerId);
 }
