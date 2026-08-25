@@ -7,7 +7,7 @@ import { sendAndTrack } from '@/lib/sms';
 import { scheduleFollowUp } from '@/lib/agent/followup';
 import { triggerHandoff } from '@/lib/agent/handoff';
 import { isWithinBusinessHours } from '@/lib/business-hours';
-import { extractZip, geocodeZip, nearestDealer } from '@/lib/geocode';
+import { extractZip, geocodeZip, nearestDealer, shippingDealer } from '@/lib/geocode';
 import type { Conversation, Lead, Dealer, Message, DealerSettings } from '@/lib/types';
 
 /**
@@ -119,6 +119,10 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     let dealer: Dealer | null = null;
+    // Set when someone with no store in driving range is routed to a dealer
+    // who ships. The conversation must then be about delivery, not about
+    // coming in to try it.
+    let shipToCustomer = false;
 
     if (existingLead) {
       // Route to the dealer from their existing conversation
@@ -264,6 +268,19 @@ export async function POST(req: NextRequest) {
         // fallback handed them to whoever owns the shared number, which on this
         // account is a demo storefront — a real shopper would have been put
         // through to a store that does not exist.
+        // Nobody within driving range. Plenty of people buy a mattress shipped,
+        // so try a dealer who ships before giving up on the sale.
+        if (!dealer && origin && activeDealers) {
+          const shipper = shippingDealer(origin, activeDealers as any[]);
+          if (shipper) {
+            dealer = shipper as Dealer;
+            shipToCustomer = true;
+            console.log('[Telnyx] No store near', zip, '- routing to shipper', (shipper as any).business_name);
+          }
+        }
+
+        // Nobody near them and nobody who ships: say so plainly rather than
+        // connecting them to whichever pin happened to be closest.
         if (!dealer && origin) {
           const { sendSms } = await import('@/lib/sms');
           await sendSms(
@@ -367,7 +384,7 @@ export async function POST(req: NextRequest) {
           dealer_id: dealer.id,
           status: 'active',
           agent_state: 'greeting',
-          context: seededContext,
+          context: shipToCustomer ? { ...seededContext, ship_to_customer: true } : seededContext,
         })
         .select()
         .maybeSingle();

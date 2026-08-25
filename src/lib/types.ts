@@ -81,6 +81,12 @@ export interface DealerSettings {
   timezone: string;
   greeting_style: string;
   store_address: string;
+  /**
+   * Dealer will ship to a customer outside driving range. Off unless the dealer
+   * says otherwise: shipping a mattress across the country is a commitment we
+   * must never make on their behalf.
+   */
+  ships_nationwide?: boolean;
   store_phone: string;
   store_website: string;
   current_promotions: string;
@@ -157,6 +163,8 @@ export interface ConversationContext {
   urgency: string | null;
   financing_interest: boolean | null;
   delivery_zip: string | null;
+  /** Routed as a ship-to-customer conversation: there is no store in range. */
+  ship_to_customer?: boolean | null;
   store_location: string | null;
   trade_in: boolean | null;
   preferred_next_step: string | null;

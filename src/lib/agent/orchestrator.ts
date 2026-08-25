@@ -391,6 +391,15 @@ export async function processMessage(
     if (parsed.schedule_appointment) {
       try {
         const appt = parsed.schedule_appointment;
+
+        // A shipping customer cannot visit a store — there isn't one near them.
+        // The system prompt says so, but a model drops a standing instruction
+        // eventually, and booking someone a showroom visit hundreds of miles
+        // away is the single worst thing this agent could do to a customer.
+        if (updatedContext.ship_to_customer && appt.type === 'showroom_visit') {
+          console.warn('[Agent] Rewrote showroom_visit to phone_call: customer cannot visit a store');
+          appt.type = 'phone_call';
+        }
         const nowIso = new Date().toISOString();
 
         // Existing upcoming appointment for this conversation (if any)

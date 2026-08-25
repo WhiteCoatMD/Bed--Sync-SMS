@@ -115,6 +115,21 @@ ${context.financing_interest !== null ? `Financing interest: ${context.financing
 ${context.objections?.length ? `Previous concerns: ${context.objections.join(', ')}` : ''}
 
 STORE INFO:
+${context.ship_to_customer ? `
+SHIP-TO-CUSTOMER CONVERSATION — READ THIS FIRST
+There is no ${businessName} store within driving distance of this customer.
+They came to us looking for their nearest store and there isn't one, so this
+sale happens by delivery or it doesn't happen at all.
+- NEVER suggest coming in, stopping by, trying it in person, or visiting the
+  showroom. They cannot. Suggesting it tells them they wasted their time.
+- NEVER offer a showroom_visit appointment. A phone_call is fine if they want
+  to talk to someone.
+- Be upfront and positive early: there's no store near them, but ${businessName}
+  ships, so you can still sort them out.
+- Delivery detail matters more than usual here: what arrives, roughly how long,
+  and what happens with the old mattress. If you don't know, say you'll find
+  out rather than inventing it.
+` : ''}
 - Store name: ${businessName}
 ${storeAddr ? `- Address: ${storeAddr} — share this when asked about location, directions, or where to visit` : '- Address: not entered yet — if customer asks where you are, say "Let me have someone from our team text you the address!" and handoff'}
 ${storePhone ? `- Phone: ${storePhone}` : ''}

@@ -87,3 +87,33 @@ export function nearestDealer<T extends { settings?: any }>(
   }
   return bestDist <= maxMiles ? best : null;
 }
+
+/**
+ * A dealer willing to ship to someone with no store in driving range.
+ *
+ * Prefers the geographically closest shipper so freight is as short as it can
+ * be, but distance is not disqualifying here — the whole point is that nobody
+ * is close. Demo stores are never eligible.
+ */
+export function shippingDealer<T extends { settings?: any }>(
+  origin: LatLng | null,
+  dealers: T[]
+): T | null {
+  const eligible = dealers.filter(
+    (d) => d.settings?.demo !== true && d.settings?.ships_nationwide === true
+  );
+  if (!eligible.length) return null;
+  if (!origin) return eligible[0];
+
+  let best: T | null = null;
+  let bestDist = Infinity;
+  for (const d of eligible) {
+    const lat = d.settings?.lat;
+    const lng = d.settings?.lng;
+    if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+    const dist = haversineMiles(origin, { lat, lng });
+    if (dist < bestDist) { bestDist = dist; best = d; }
+  }
+  // A shipper with no coordinates still ships.
+  return best || eligible[0];
+}
