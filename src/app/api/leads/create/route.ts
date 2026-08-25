@@ -82,6 +82,39 @@ export async function POST(req: NextRequest) {
 
       if (existingConv) {
         conversation = existingConv as Conversation;
+
+        // A website form is a fresh contact from the customer's side. They never
+        // saw the priming message we record for the agent, so answering it as a
+        // continuation sends them a reply to something they did not write --
+        // "Great! To find the perfect fit..." arriving out of nowhere.
+        //
+        // Reset the agent to its opening state so it introduces itself and
+        // responds to the enquiry they actually just made. The context is kept,
+        // so it still knows who they are and what they looked at before.
+        //
+        // Unless they are mid-conversation right now: someone texting back and
+        // forth who also taps the form should not have the thread restarted
+        // under them.
+        const { data: lastMsg } = await db
+          .from('messages')
+          .select('created_at')
+          .eq('conversation_id', existingConv.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const minutesSince = lastMsg
+          ? (Date.now() - new Date(lastMsg.created_at).getTime()) / 60000
+          : Infinity;
+
+        if (minutesSince > 10 && existingConv.agent_state !== 'greeting') {
+          await db
+            .from('conversations')
+            .update({ agent_state: 'greeting', status: 'active' })
+            .eq('id', existingConv.id);
+          conversation = { ...(existingConv as Conversation), agent_state: 'greeting' } as Conversation;
+          console.log('[Leads] website enquiry on an idle conversation - reopening with a greeting');
+        }
+
         // Keep the live conversation's idea of who they are in step with the
         // form they just submitted.
         if (freshDetails.customer_name) {
