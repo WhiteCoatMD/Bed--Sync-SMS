@@ -6,6 +6,57 @@ interface ProvisionResult {
   phoneNumber?: string;
   id?: string;
   error?: string;
+  /**
+   * Whether the number was registered to the 10DLC campaign. A number without
+   * this cannot send to US mobiles: carriers drop unregistered long-code
+   * traffic. Reported separately from success so a number that was bought but
+   * is not yet able to send cannot be mistaken for a working one -- which is
+   * exactly how a batch of unusable numbers went unnoticed before.
+   */
+  campaignAssigned?: boolean;
+  campaignError?: string;
+}
+
+/**
+ * Register a purchased long code to the 10DLC campaign.
+ *
+ * Retried: the number order settles asynchronously, so an assignment attempted
+ * the instant the order returns can arrive before the number exists.
+ */
+async function assignToCampaign(phoneNumber: string): Promise<{ ok: boolean; error?: string }> {
+  const campaignId = process.env.TELNYX_10DLC_CAMPAIGN_ID;
+  if (!campaignId) return { ok: false, error: 'TELNYX_10DLC_CAMPAIGN_ID is not set' };
+
+  let last = '';
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await telnyxRequest('/10dlc/phone_number_campaigns', 'POST', {
+        phoneNumber,
+        campaignId,
+      });
+      return { ok: true };
+    } catch (err: any) {
+      last = err?.message || String(err);
+      // Nothing to wait for if the campaign itself is unusable.
+      if (/expired|unusable|not found/i.test(last)) break;
+      await new Promise((r) => setTimeout(r, attempt * 4000));
+    }
+  }
+  return { ok: false, error: last };
+}
+
+/** Wait for an ordered number to actually exist on the account. */
+async function waitForNumber(phoneNumber: string): Promise<boolean> {
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      const res = await telnyxRequest(
+        `/phone_numbers?filter[phone_number]=${encodeURIComponent(phoneNumber)}`
+      );
+      if ((res.data || []).some((n: any) => n.phone_number === phoneNumber)) return true;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  return false;
 }
 
 /**
@@ -49,19 +100,37 @@ export async function provisionLocalNumber(
 
     const purchasedNumber = chosen.phone_number;
 
-    // 4. Save to dealer record
+    // 4. The order settles asynchronously; wait for the number to be real
+    //    before doing anything that depends on it existing.
+    await waitForNumber(purchasedNumber);
+
+    // 5. Register it to the 10DLC campaign. Without this the number is bought
+    //    and configured but silently cannot deliver to US mobiles.
+    const campaign = await assignToCampaign(purchasedNumber);
+    if (!campaign.ok) {
+      console.error(
+        `[Telnyx] ${purchasedNumber} is NOT registered to a 10DLC campaign and cannot send: ${campaign.error}`
+      );
+    }
+
+    // 6. Save to dealer record
     const db = getServiceClient();
     await db
       .from('dealers')
       .update({ twilio_phone: purchasedNumber })
       .eq('id', dealerId);
 
-    console.log(`[Telnyx] Provisioned ${purchasedNumber} for dealer ${dealerId}`);
+    console.log(
+      `[Telnyx] Provisioned ${purchasedNumber} for dealer ${dealerId}` +
+        (campaign.ok ? ' (registered to campaign)' : ' (NOT campaign-registered - cannot send)')
+    );
 
     return {
       success: true,
       phoneNumber: purchasedNumber,
       id: orderResult.data?.id,
+      campaignAssigned: campaign.ok,
+      campaignError: campaign.ok ? undefined : campaign.error,
     };
   } catch (err: any) {
     console.error('[Telnyx] Provisioning error:', err);
