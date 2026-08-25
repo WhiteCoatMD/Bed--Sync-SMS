@@ -69,15 +69,36 @@ export async function sendAndTrack(
     .eq('id', dealerId)
     .single();
 
+  // The first message of a conversation carries the opt-out notice. Carriers
+  // expect it on the opening message, and a toll-free verification is granted
+  // on the promise that it is there. Appended here rather than asked of the
+  // model: an LLM drops a standing instruction eventually, and this one is not
+  // allowed to be dropped.
+  let outboundBody = body;
+  try {
+    const { count } = await db
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('conversation_id', conversationId)
+      .eq('direction', 'outbound');
+    const isFirstOutbound = (count || 0) === 0;
+    if (isFirstOutbound && !/reply stop/i.test(outboundBody)) {
+      outboundBody = outboundBody.trimEnd() + ' Reply STOP to opt out.';
+    }
+  } catch (e) {
+    console.error('[Compliance] first-message check failed:', (e as Error).message);
+  }
+
   const fromNumber = dealer?.twilio_phone || process.env.TELNYX_PHONE_NUMBER;
-  const messageId = await sendSms(to, body, fromNumber || undefined, mediaUrls);
+  const messageId = await sendSms(to, outboundBody, fromNumber || undefined, mediaUrls);
 
   // Record message
   await db.from('messages').insert({
     conversation_id: conversationId,
     direction: 'outbound',
     sender,
-    body,
+    // the text actually sent, opt-out notice included, so the record is evidence
+    body: outboundBody,
     twilio_sid: messageId,
     metadata: mediaUrls?.length ? { media_urls: mediaUrls } : {},
   });
