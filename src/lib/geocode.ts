@@ -55,21 +55,35 @@ export function haversineMiles(a: LatLng, b: LatLng): number {
  * Nearest active dealer to `origin` among those with coordinates in
  * settings.lat / settings.lng. Dealers without coordinates are ignored.
  */
+/**
+ * How far someone will plausibly drive to try a mattress. Beyond this we have
+ * no store for them, and saying so is better than connecting a shopper in
+ * Seattle to a store in Florida because it happened to be the closest pin.
+ */
+export const MAX_ROUTING_MILES = 75;
+
 export function nearestDealer<T extends { settings?: any }>(
   origin: LatLng,
-  dealers: T[]
+  dealers: T[],
+  maxMiles: number = MAX_ROUTING_MILES
 ): T | null {
   let best: T | null = null;
   let bestDist = Infinity;
   for (const d of dealers) {
+    // Demo and test stores must never receive a real shopper. They are the
+    // only located dealers on some accounts, so without this every cold text
+    // lands on a fake storefront.
+    if (d.settings?.demo === true) continue;
+
     const lat = d.settings?.lat;
     const lng = d.settings?.lng;
     if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+
     const dist = haversineMiles(origin, { lat, lng });
     if (dist < bestDist) {
       bestDist = dist;
       best = d;
     }
   }
-  return best;
+  return bestDist <= maxMiles ? best : null;
 }

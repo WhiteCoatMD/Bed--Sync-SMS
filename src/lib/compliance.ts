@@ -82,14 +82,19 @@ export async function recordOptIn(phone: string) {
  * reply must name the sender and give a way to reach a human.
  */
 export function complianceReply(action: Exclude<KeywordAction, null>, businessName?: string): string {
-    const who = businessName && businessName.trim() ? businessName.trim() : 'BedSync';
+    // Bed Sync is the sender of every message in this program, so it is Bed Sync
+    // the customer is unsubscribing from — naming the dealer here would
+    // contradict the consent they gave and the campaign registration.
+    // The dealer is mentioned only as the store they contacted.
+    const store = businessName && businessName.trim() ? businessName.trim() : null;
+    const forStore = store ? ` on behalf of ${store}` : '';
     if (action === 'opt_out') {
-        return `You have been unsubscribed from ${who} and will not receive further messages. Reply START to resubscribe.`;
+        return `You have been unsubscribed from Bed Sync${forStore} and will not receive further messages. Reply START to resubscribe.`;
     }
     if (action === 'opt_in') {
-        return `You are resubscribed to ${who}. Reply STOP to opt out, HELP for help.`;
+        return `You are resubscribed to Bed Sync${forStore}. Reply STOP to opt out, HELP for help.`;
     }
-    return `${who}: we text about your mattress inquiry — follow-ups, appointment confirmations and delivery updates. Msg & data rates may apply. Reply STOP to opt out. Support: (318) 372-7140`;
+    return `Bed Sync: we text about your mattress inquiry${store ? ` with ${store}` : ''} — follow-ups, appointment confirmations and delivery updates. Msg & data rates may apply. Reply STOP to opt out. Support: (318) 372-7140`;
 }
 
 export { normalise as normalisePhone };

@@ -243,7 +243,7 @@ export async function POST(req: NextRequest) {
         if (!zip) {
           // No ZIP yet — ask for it so we can route to the nearest store.
           const { sendSms } = await import('@/lib/sms');
-          await sendSms(from, `Thanks for reaching out! What's your ZIP code? I'll connect you with the store nearest you.`);
+          await sendSms(from, `Hey! This is Bed Sync — I help people find their nearest mattress store. What's your ZIP code and I'll connect you with the closest one. Reply STOP to opt out.`);
           console.log('[Telnyx] Cold text, asked for ZIP. From:', from);
           return NextResponse.json({ ok: true });
         }
@@ -259,12 +259,19 @@ export async function POST(req: NextRequest) {
           if (nearest) dealer = nearest as Dealer;
         }
 
-        // Valid-looking ZIP but couldn't geocode / no dealer has coordinates:
-        // fall back to the dealer that owns the shared number so we still engage.
-        if (!dealer && activeDealers) {
-          dealer =
-            ((activeDealers as any[]).find((d) => d.twilio_phone === sharedNumber) as Dealer) ||
-            null;
+        // Geocoded fine, but no real store within range: say so rather than
+        // connecting them to whichever pin happened to be nearest. The old
+        // fallback handed them to whoever owns the shared number, which on this
+        // account is a demo storefront — a real shopper would have been put
+        // through to a store that does not exist.
+        if (!dealer && origin) {
+          const { sendSms } = await import('@/lib/sms');
+          await sendSms(
+            from,
+            `Thanks for reaching out! We don't have a store near ${zip} just yet. If you leave your name I'll pass it along, and we'll reach out as soon as one opens up nearby.`
+          );
+          console.log('[Telnyx] Cold text, no store within range of', zip, 'From:', from);
+          return NextResponse.json({ ok: true, routed: 'no store within range' });
         }
 
         // Couldn't geocode the ZIP at all — ask them to re-check it.
