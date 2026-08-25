@@ -49,6 +49,17 @@ export async function sendAndTrack(
   sender: 'agent' | 'human' = 'agent',
   mediaUrls?: string[]
 ): Promise<string | null> {
+  // Nothing goes to a number that has texted STOP. Enforced here rather than at
+  // each call site because every agent reply, follow-up and reminder funnels
+  // through this one function — a guard anywhere else would eventually be
+  // bypassed by a new code path. sendSms() stays unguarded on purpose so the
+  // opt-out confirmation itself can still be delivered.
+  const { isOptedOut } = await import('@/lib/compliance');
+  if (await isOptedOut(to)) {
+    console.log('[Compliance] suppressed send to opted-out number ' + to);
+    return null;
+  }
+
   const db = getServiceClient();
 
   // Look up the dealer's provisioned phone number

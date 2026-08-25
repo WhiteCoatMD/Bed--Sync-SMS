@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
 import { processMessage } from '@/lib/agent/orchestrator';
 import { verifyTelnyxSignature } from '@/lib/webhook-verify';
+import { classifyKeyword, recordOptOut, recordOptIn, complianceReply } from '@/lib/compliance';
 import { sendAndTrack } from '@/lib/sms';
 import { scheduleFollowUp } from '@/lib/agent/followup';
 import { triggerHandoff } from '@/lib/agent/handoff';
@@ -47,6 +48,65 @@ export async function POST(req: NextRequest) {
     }
 
     const db = getServiceClient();
+
+    // Carrier keywords come first — before routing, before the AI.
+    //
+    // Every dealer's lead form promises "Reply STOP to opt out, HELP for help",
+    // and a toll-free verification is granted on that promise. Handling it here
+    // means a STOP works even when routing cannot tell which dealer the sender
+    // belongs to, and can never be swallowed by the agent treating it as chat.
+    let keywordAction = classifyKeyword(body);
+    // START from someone who never opted out is just conversation; let it through
+    // rather than answering a resubscribe confirmation they did not ask for.
+    if (keywordAction === 'opt_in') {
+      const { isOptedOut } = await import('@/lib/compliance');
+      if (!(await isOptedOut(from))) keywordAction = null;
+    }
+    if (keywordAction) {
+      const { sendSms } = await import('@/lib/sms');
+
+      // Name the dealer they were actually talking to, when we can tell.
+      let businessName: string | undefined;
+      try {
+        const { data: kwLead } = await db
+          .from('leads')
+          .select('dealer_id')
+          .eq('phone', from.replace(/^\+1/, '').replace(/\D/g, ''))
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (kwLead?.dealer_id) {
+          const { data: kwDealer } = await db
+            .from('dealers')
+            .select('business_name, twilio_phone')
+            .eq('id', kwLead.dealer_id)
+            .maybeSingle();
+          businessName = kwDealer?.business_name;
+        }
+      } catch (e) {
+        console.error('[Compliance] dealer lookup failed:', (e as Error).message);
+      }
+
+      if (keywordAction === 'opt_out') {
+        await recordOptOut(from, body.trim().toUpperCase());
+        // Cold-outreach prospects are tracked separately; honour it there too.
+        try {
+          await db
+            .from('outreach_prospects')
+            .update({ status: 'opted_out', updated_at: new Date().toISOString() })
+            .eq('phone', from);
+        } catch {}
+      } else if (keywordAction === 'opt_in') {
+        await recordOptIn(from);
+      }
+
+      // Sent directly, bypassing the opt-out guard in sendAndTrack: the
+      // confirmation of a STOP is the one message a just-unsubscribed number
+      // must still receive, and carriers require it.
+      await sendSms(from, complianceReply(keywordAction, businessName), to);
+      console.log('[Compliance] ' + keywordAction + ' handled for ' + from);
+      return NextResponse.json({ ok: true, compliance: keywordAction });
+    }
 
     // Check if this customer has an existing conversation (any dealer)
     const cleanFromPhone = from.replace(/^\+1/, '').replace(/\D/g, '');
