@@ -97,6 +97,14 @@ export async function processPendingReminders(): Promise<number> {
     if (!phone) continue;
 
     const settings = (dealer.settings || {}) as DealerSettings;
+
+    // Demo dealers never text anyone. Their appointments are seeded against
+    // fake numbers, so every attempt fails with Telnyx 10002 and -- because the
+    // dedupe log is only written after a successful send -- the same appointment
+    // is retried on every run, forever. Matches the guard the provisioning cron
+    // already applies.
+    if (settings.demo === true) continue;
+
     const tz = settings.timezone || 'America/Chicago';
 
     // Too early where they are: leave it pending. The appointment stays inside

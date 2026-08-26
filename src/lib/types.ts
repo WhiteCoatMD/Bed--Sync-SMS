@@ -87,6 +87,12 @@ export interface DealerSettings {
    * must never make on their behalf.
    */
   ships_nationwide?: boolean;
+  /**
+   * A seeded storefront that must never send a real message. Its leads carry
+   * placeholder numbers. Checked by routing, number provisioning and reminders;
+   * declared here so the next sender does not have to rediscover it.
+   */
+  demo?: boolean;
   store_phone: string;
   store_website: string;
   current_promotions: string;
