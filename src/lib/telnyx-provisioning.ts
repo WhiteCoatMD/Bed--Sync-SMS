@@ -1,4 +1,4 @@
-import { telnyxRequest } from './telnyx';
+import { telnyxRequest, TelnyxApiError } from './telnyx';
 import { getServiceClient } from './supabase';
 import { resolveUsableCampaign } from './10dlc';
 
@@ -23,13 +23,26 @@ interface ProvisionResult {
  *
  * Retried: the number order settles asynchronously, so an assignment attempted
  * the instant the order returns can arrive before the number exists.
+ *
+ * campaignId is optional so the cron's gate decision can be threaded through:
+ * when the cron already resolved a usable campaign to decide whether to spend
+ * at all, this must use that exact id rather than resolving a second time. Two
+ * independent resolves of the same in-flight campaigns can disagree on a blip
+ * (a lookup failure skips a campaign), silently landing the number assignment
+ * on a different campaign than the one the gate approved. When no campaignId
+ * is supplied (other callers), this resolves on its own as before.
  */
-async function assignToCampaign(phoneNumber: string): Promise<{ ok: boolean; error?: string }> {
-  // Not the env var directly: with two filings pending, the usable one is
-  // whichever the carriers cleared, and that is only knowable by asking.
-  const resolution = await resolveUsableCampaign();
-  if (!resolution.ok) return { ok: false, error: resolution.reason };
-  const campaignId = resolution.campaignId;
+async function assignToCampaign(
+  phoneNumber: string,
+  campaignId?: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!campaignId) {
+    // Not the env var directly: with two filings pending, the usable one is
+    // whichever the carriers cleared, and that is only knowable by asking.
+    const resolution = await resolveUsableCampaign();
+    if (!resolution.ok) return { ok: false, error: resolution.reason };
+    campaignId = resolution.campaignId;
+  }
 
   let last = '';
   for (let attempt = 1; attempt <= 5; attempt++) {
@@ -41,6 +54,11 @@ async function assignToCampaign(phoneNumber: string): Promise<{ ok: boolean; err
       return { ok: true };
     } catch (err: any) {
       last = err?.message || String(err);
+      // 10036 means the campaign is still in carrier review -- that will not
+      // resolve itself in the next few seconds, and retrying just burns all 5
+      // attempts' worth of backoff (minutes) on a serverless cron run for
+      // nothing. Stop immediately instead of pattern-matching the message.
+      if (err instanceof TelnyxApiError && err.hasCode('10036')) break;
       // Nothing to wait for if the campaign itself is unusable.
       if (/expired|unusable|not found/i.test(last)) break;
       await new Promise((r) => setTimeout(r, attempt * 4000));
@@ -70,7 +88,8 @@ async function waitForNumber(phoneNumber: string): Promise<boolean> {
 export async function provisionLocalNumber(
   dealerId: string,
   areaCode: string,
-  webhookBaseUrl: string
+  webhookBaseUrl: string,
+  campaignId?: string
 ): Promise<ProvisionResult> {
   const webhookUrl = `${webhookBaseUrl}/api/telnyx/inbound`;
 
@@ -110,23 +129,36 @@ export async function provisionLocalNumber(
 
     // 5. Register it to the 10DLC campaign. Without this the number is bought
     //    and configured but silently cannot deliver to US mobiles.
-    const campaign = await assignToCampaign(purchasedNumber);
+    const campaign = await assignToCampaign(purchasedNumber, campaignId);
     if (!campaign.ok) {
       console.error(
         `[Telnyx] ${purchasedNumber} is NOT registered to a 10DLC campaign and cannot send: ${campaign.error}`
       );
     }
 
-    // 6. Save to dealer record
-    const db = getServiceClient();
-    await db
-      .from('dealers')
-      .update({ twilio_phone: purchasedNumber })
-      .eq('id', dealerId);
+    // 6. Save to dealer record -- ONLY when the campaign assignment actually
+    //    succeeded. sendAndTrack resolves the sending number as
+    //    dealer.twilio_phone || TELNYX_PHONE_NUMBER, so writing twilio_phone
+    //    here unconditionally would move a dealer OFF the shared toll-free
+    //    line (which works today) and ONTO a freshly bought long code that
+    //    carriers silently drop because it isn't campaign-registered. The
+    //    shared line is the safe fallback and must not be given up for a
+    //    number that cannot send. On failure we still hand back the purchased
+    //    number (campaignAssigned: false) so it can be assigned later, but we
+    //    leave the dealer row untouched.
+    if (campaign.ok) {
+      const db = getServiceClient();
+      await db
+        .from('dealers')
+        .update({ twilio_phone: purchasedNumber })
+        .eq('id', dealerId);
+    }
 
     console.log(
       `[Telnyx] Provisioned ${purchasedNumber} for dealer ${dealerId}` +
-        (campaign.ok ? ' (registered to campaign)' : ' (NOT campaign-registered - cannot send)')
+        (campaign.ok
+          ? ' (registered to campaign)'
+          : ' (NOT campaign-registered - cannot send; dealer left on shared line)')
     );
 
     return {

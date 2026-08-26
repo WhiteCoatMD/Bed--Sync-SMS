@@ -31,6 +31,19 @@ describe('isUsable', () => {
     expect(isUsable({ status: 'ACTIVE', campaignStatus: 'ACTIVE' })).toBe(true);
     expect(isUsable({ status: 'ACTIVE', campaignStatus: 'ACTIVE', failureReasons: null })).toBe(true);
   });
+
+  it('rejects a rejection-flavoured campaignStatus even with no findings listed', () => {
+    expect(isUsable({ status: 'ACTIVE', campaignStatus: 'MNO_REJECTED', failureReasons: [] })).toBe(false);
+  });
+
+  it('rejects any hypothetical campaignStatus matching /fail|reject/i, not just TELNYX_FAILED', () => {
+    expect(isUsable({ status: 'ACTIVE', campaignStatus: 'PROVIDER_REJECTED', failureReasons: [] })).toBe(false);
+    expect(isUsable({ status: 'ACTIVE', campaignStatus: 'campaign_failed', failureReasons: [] })).toBe(false);
+  });
+
+  it('accepts TCR_ACCEPTED with no findings — a legitimate in-review state, not a failure', () => {
+    expect(isUsable({ status: 'ACTIVE', campaignStatus: 'TCR_ACCEPTED', failureReasons: [] })).toBe(true);
+  });
 });
 
 describe('configuredCampaignIds', () => {

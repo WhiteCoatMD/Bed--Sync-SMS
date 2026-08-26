@@ -49,7 +49,6 @@ export async function GET(req: NextRequest) {
     console.log('[Provision] waiting:', resolution.reason);
     return NextResponse.json({ ok: true, waiting: true, reason: resolution.reason });
   }
-  const campaignReady = true;
 
   const db = getServiceClient();
   const { data: dealers } = await db
@@ -75,10 +74,16 @@ export async function GET(req: NextRequest) {
       continue;
     }
     try {
+      // Pass the id the gate already resolved above so provisionLocalNumber
+      // (and assignToCampaign) don't re-resolve independently -- a second,
+      // separate resolve of the same in-flight campaigns can disagree with
+      // this one on a lookup blip and silently land the number on the wrong
+      // campaign. The gate's decision is the only decision.
       const r = await provisionLocalNumber(
         dealer.id,
         areaCode,
-        process.env.NEXT_PUBLIC_APP_URL || 'https://sms.bed-sync.com'
+        process.env.NEXT_PUBLIC_APP_URL || 'https://sms.bed-sync.com',
+        resolution.campaignId
       );
       results.push({
         dealer: dealer.business_name,
@@ -97,9 +102,13 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    campaignReady,
+    campaignId: resolution.campaignId,
     pending: pending.length,
-    provisioned: results.filter((r) => r.success).length,
+    // Only numbers actually registered to the campaign count as provisioned --
+    // a bought-but-unregistered number can't send, so counting it here would
+    // hide exactly the failure this whole area already suffered once.
+    provisioned: results.filter((r) => r.success && r.campaignAssigned).length,
+    boughtButUnregistered: results.filter((r) => r.success && !r.campaignAssigned).length,
     remaining: Math.max(0, pending.length - results.length),
     results,
   });

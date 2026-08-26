@@ -25,10 +25,19 @@ export type CampaignResolution =
 
 export type CampaignFetcher = (campaignId: string) => Promise<CampaignSnapshot>;
 
-/** All three conditions must hold. Any one of them alone will mislead you. */
+/**
+ * All three conditions must hold. Any one of them alone will mislead you.
+ *
+ * campaignStatus is matched against /fail|reject/i rather than a fixed list of
+ * known-bad values: Telnyx has more than one failure/rejection flavour of
+ * campaignStatus, and a campaign sitting in one we hadn't enumerated -- with
+ * status: ACTIVE and no failureReasons yet -- would otherwise sail through and
+ * open the spend gate. A missing/undefined campaignStatus is still acceptable,
+ * same as before: that's a legitimate in-review state, not a failure.
+ */
 export function isUsable(c: CampaignSnapshot): boolean {
   if (c.status !== 'ACTIVE') return false;
-  if (c.campaignStatus === 'TELNYX_FAILED') return false;
+  if (c.campaignStatus && /fail|reject/i.test(c.campaignStatus)) return false;
   return !(Array.isArray(c.failureReasons) && c.failureReasons.length > 0);
 }
 
