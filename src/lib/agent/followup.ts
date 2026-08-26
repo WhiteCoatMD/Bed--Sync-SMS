@@ -225,7 +225,7 @@ function getFollowUpMessage(
     case 1: {
       // First follow-up: reference what they were looking for
       if (hasSize && hasBudget) {
-        return `Hey${name}! Still thinking about that ${context.mattress_size} mattress? We had some great options in your ${formatBudget(context.budget_max!)} budget range. Happy to answer any questions!`;
+        return `Hey${name}! Still thinking about that ${context.mattress_size} mattress? They had some great options in your ${formatBudget(context.budget_max!)} budget range. Happy to answer any questions!`;
       }
       if (hasSize && hasFirmness) {
         return `Hey${name}! Just checking in on your ${context.mattress_size} mattress search. The ${context.firmness} options I found looked like a great fit for you. Any questions?`;
@@ -239,7 +239,7 @@ function getFollowUpMessage(
     case 2: {
       // Second follow-up: reference recommendations or specific details
       if (hasRecommendations && hasFinancing) {
-        return `Hi${name}, those mattresses I showed you are still available! And just a reminder, we do offer financing options if that helps. Want me to send over more details?`;
+        return `Hi${name}, those mattresses I showed you are still available! And just a reminder, they do offer financing options if that helps. Want me to send over more details?`;
       }
       if (hasRecommendations && hasBudget) {
         return `Hi${name}, circling back one more time. The options I recommended in your price range are still in stock. Would you like to come check them out in person?`;

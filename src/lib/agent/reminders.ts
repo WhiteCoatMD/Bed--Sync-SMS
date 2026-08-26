@@ -110,7 +110,7 @@ export async function processPendingReminders(): Promise<number> {
     const first = conv.lead.customer_name ? ` ${String(conv.lead.customer_name).split(' ')[0]}` : '';
     const kind = a.type === 'phone_call' ? 'call' : 'visit';
 
-    const message = `Hi${first}! Friendly reminder about your ${kind} with ${dealer.business_name} on ${when}. We're looking forward to it — just reply here if you need to reschedule.`;
+    const message = `Hi${first}! Friendly reminder about your ${kind} with ${dealer.business_name} on ${when}. They're looking forward to it — just reply here if you need to reschedule.`;
 
     try {
       await sendAndTrack(a.dealer_id, a.conversation_id, phone, message, 'agent');
