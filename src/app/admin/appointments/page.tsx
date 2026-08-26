@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { resolveAdminSession } from '@/lib/admin-session';
 
 interface Appointment {
   id: string;
@@ -45,17 +46,8 @@ export default function AppointmentsPage() {
   useEffect(() => { if (dealerId) fetchAppointments(); }, [dealerId, view]);
 
   async function authenticate() {
-    // Capture token + dealer_id from the URL (super-admin switcher deep-links
-    // straight here), persist them, then strip them from the address bar.
-    const sp = new URLSearchParams(window.location.search);
-    const tokenParam = sp.get('token');
-    if (tokenParam) localStorage.setItem('sms_auth_token', tokenParam);
-    const dealerParam = sp.get('dealer_id');
-    if (dealerParam) localStorage.setItem('sms_dealer_override', dealerParam);
-    if (tokenParam || dealerParam) window.history.replaceState({}, '', '/admin/appointments');
-    const token = localStorage.getItem('sms_auth_token') || localStorage.getItem('auth_token');
+    const { token, overrideDealerId } = resolveAdminSession('/admin/appointments');
     if (!token) { setAuthError('Not authenticated.'); setLoading(false); return; }
-    const overrideDealerId = localStorage.getItem('sms_dealer_override') || undefined;
     try {
       const res = await fetch('/api/auth/verify', {
         method: 'POST',

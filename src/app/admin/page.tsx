@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { resolveAdminSession } from '@/lib/admin-session';
 
 interface ConversationRow {
   id: string;
@@ -122,28 +123,12 @@ export default function AdminDashboard() {
   }, [allConversations, filter, searchQuery, sortBy]);
 
   async function authenticateDealer() {
-    const params = new URLSearchParams(window.location.search);
-    const tokenParam = params.get('token');
-    // Super-admin dealer switcher: a dealer_id in the URL means "view this
-    // dealer". Persist it so it survives navigation to other admin pages.
-    const dealerParam = params.get('dealer_id');
-    if (dealerParam) {
-      localStorage.setItem('sms_dealer_override', dealerParam);
-    }
-
-    if (tokenParam) {
-      localStorage.setItem('sms_auth_token', tokenParam);
-      window.history.replaceState({}, '', '/admin');
-    }
-
-    const token = localStorage.getItem('sms_auth_token') || localStorage.getItem('auth_token');
+    const { token, overrideDealerId } = resolveAdminSession('/admin');
     if (!token) {
       setAuthError('Not authenticated. Please access this page from your Bed Sync admin panel.');
       setLoading(false);
       return;
     }
-
-    const overrideDealerId = localStorage.getItem('sms_dealer_override') || undefined;
 
     try {
       const res = await fetch('/api/auth/verify', {
