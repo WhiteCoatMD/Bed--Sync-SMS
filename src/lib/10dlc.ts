@@ -36,8 +36,14 @@ export function isUsable(c: CampaignSnapshot): boolean {
  * Campaign ids in preference order. TELNYX_10DLC_CAMPAIGN_IDS is the plural
  * form used while more than one filing is pending; the singular var is still
  * honoured so an unset plural var changes nothing.
+ *
+ * env is typed as Record<string, string | undefined>, not NodeJS.ProcessEnv:
+ * Next.js augments NodeJS.ProcessEnv with a required `NODE_ENV` literal, which
+ * makes the plain env-var fixtures used in tests uncastable to that type. Do
+ * not tighten this back to NodeJS.ProcessEnv — process.env still satisfies
+ * this type, so nothing about real callers changes.
  */
-export function configuredCampaignIds(env: NodeJS.ProcessEnv = process.env): string[] {
+export function configuredCampaignIds(env: Record<string, string | undefined> = process.env): string[] {
   const plural = (env.TELNYX_10DLC_CAMPAIGN_IDS || '')
     .split(',')
     .map((s) => s.trim())
@@ -53,7 +59,7 @@ const defaultFetcher: CampaignFetcher = (campaignId) =>
 
 export async function resolveUsableCampaign(
   fetchCampaign: CampaignFetcher = defaultFetcher,
-  env: NodeJS.ProcessEnv = process.env
+  env: Record<string, string | undefined> = process.env
 ): Promise<CampaignResolution> {
   const ids = configuredCampaignIds(env);
   if (ids.length === 0) {

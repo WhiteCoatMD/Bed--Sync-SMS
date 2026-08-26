@@ -35,23 +35,23 @@ describe('isUsable', () => {
 
 describe('configuredCampaignIds', () => {
   it('reads the plural var in order, trimming blanks', () => {
-    expect(configuredCampaignIds({ TELNYX_10DLC_CAMPAIGN_IDS: ' a , b ,, c ' } as NodeJS.ProcessEnv))
+    expect(configuredCampaignIds({ TELNYX_10DLC_CAMPAIGN_IDS: ' a , b ,, c ' }))
       .toEqual(['a', 'b', 'c']);
   });
 
   it('falls back to the singular var so nothing breaks if the new one is unset', () => {
-    expect(configuredCampaignIds({ TELNYX_10DLC_CAMPAIGN_ID: 'solo' } as NodeJS.ProcessEnv)).toEqual(['solo']);
+    expect(configuredCampaignIds({ TELNYX_10DLC_CAMPAIGN_ID: 'solo' })).toEqual(['solo']);
   });
 
   it('prefers the plural var when both are set', () => {
     expect(configuredCampaignIds({
       TELNYX_10DLC_CAMPAIGN_IDS: 'a,b',
       TELNYX_10DLC_CAMPAIGN_ID: 'solo',
-    } as NodeJS.ProcessEnv)).toEqual(['a', 'b']);
+    })).toEqual(['a', 'b']);
   });
 
   it('returns nothing when neither is set', () => {
-    expect(configuredCampaignIds({} as NodeJS.ProcessEnv)).toEqual([]);
+    expect(configuredCampaignIds({})).toEqual([]);
   });
 });
 
@@ -60,13 +60,13 @@ describe('resolveUsableCampaign', () => {
   const failed = { status: 'ACTIVE', campaignStatus: 'TELNYX_FAILED', failureReasons: [{ d: 1 }] };
 
   it('returns the first usable campaign, in configured order', async () => {
-    const env = { TELNYX_10DLC_CAMPAIGN_IDS: 'bad,good' } as NodeJS.ProcessEnv;
+    const env = { TELNYX_10DLC_CAMPAIGN_IDS: 'bad,good' };
     const fetchCampaign = async (id: string) => (id === 'good' ? usable : failed);
     expect(await resolveUsableCampaign(fetchCampaign, env)).toEqual({ ok: true, campaignId: 'good' });
   });
 
   it('explains itself when every campaign is unusable', async () => {
-    const env = { TELNYX_10DLC_CAMPAIGN_IDS: 'one,two' } as NodeJS.ProcessEnv;
+    const env = { TELNYX_10DLC_CAMPAIGN_IDS: 'one,two' };
     const result = await resolveUsableCampaign(async () => failed, env);
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -76,13 +76,13 @@ describe('resolveUsableCampaign', () => {
   });
 
   it('explains itself when nothing is configured, rather than throwing', async () => {
-    const result = await resolveUsableCampaign(async () => usable, {} as NodeJS.ProcessEnv);
+    const result = await resolveUsableCampaign(async () => usable, {});
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toContain('no campaign configured');
   });
 
   it('treats a lookup error as unusable and keeps checking the rest', async () => {
-    const env = { TELNYX_10DLC_CAMPAIGN_IDS: 'boom,good' } as NodeJS.ProcessEnv;
+    const env = { TELNYX_10DLC_CAMPAIGN_IDS: 'boom,good' };
     const fetchCampaign = async (id: string) => {
       if (id === 'boom') throw new Error('network down');
       return usable;
