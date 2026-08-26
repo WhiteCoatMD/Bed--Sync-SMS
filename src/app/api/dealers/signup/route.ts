@@ -3,6 +3,7 @@ import { getServiceClient } from '@/lib/supabase';
 import { provisionLocalNumber } from '@/lib/telnyx-provisioning';
 import { z } from 'zod';
 import type { Plan } from '@/lib/types';
+import { resolveUsableCampaign } from '@/lib/10dlc';
 
 const PLAN_CONFIG: Record<Plan, { messages_included: number; overage_rate: number; monthly_cost: number }> = {
   single_lot: { messages_included: 1000, overage_rate: 0.05, monthly_cost: 99.00 },
@@ -87,9 +88,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to create account' }, { status: 500 });
     }
 
-    // 2. Provision a local Twilio number with the dealer's area code
+    // 2. Give them a number of their own — but only if a 10DLC campaign can
+    // actually accept it. Without this gate, signing up during a carrier review
+    // bought a number that could never send, and said it had succeeded.
+    //
+    // A dealer with no number of their own is not broken: sendAndTrack falls
+    // back to the shared toll-free, so they work from day one and the hourly
+    // provisioning cron upgrades them once a campaign clears.
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://your-app.vercel.app';
-    const provision = await provisionLocalNumber(dealer.id, area_code, appUrl);
+    const campaign = await resolveUsableCampaign();
+
+    if (!campaign.ok) {
+      console.log(`[Signup] ${dealer.id} starts on the shared line — ${campaign.reason}`);
+      return NextResponse.json({
+        success: true,
+        dealer_id: dealer.id,
+        phone_provisioned: false,
+        phone_pending_reason: campaign.reason,
+        plan,
+        monthly_cost: planConfig.monthly_cost,
+        messages_included: planConfig.messages_included,
+        message:
+          'Account created. Texts send from the shared Bed Sync line for now; ' +
+          'a local number is issued automatically once carrier registration clears.',
+      }, { status: 201 });
+    }
+
+    const provision = await provisionLocalNumber(dealer.id, area_code, appUrl, campaign.campaignId);
 
     if (!provision.success) {
       // Dealer is created but number provisioning failed — they can retry
@@ -102,11 +127,16 @@ export async function POST(req: NextRequest) {
       }, { status: 201 });
     }
 
+    // campaignAssigned is reported separately on purpose: a number that was
+    // bought but not registered cannot send, and must never be handed back as
+    // though it works.
     return NextResponse.json({
       success: true,
       dealer_id: dealer.id,
-      phone_provisioned: true,
+      phone_provisioned: provision.campaignAssigned === true,
       twilio_phone: provision.phoneNumber,
+      campaign_assigned: provision.campaignAssigned === true,
+      campaign_error: provision.campaignError,
       plan,
       monthly_cost: planConfig.monthly_cost,
       messages_included: planConfig.messages_included,
