@@ -1,5 +1,6 @@
 import { telnyxRequest } from './telnyx';
 import { getServiceClient } from './supabase';
+import { resolveUsableCampaign } from './10dlc';
 
 interface ProvisionResult {
   success: boolean;
@@ -24,8 +25,11 @@ interface ProvisionResult {
  * the instant the order returns can arrive before the number exists.
  */
 async function assignToCampaign(phoneNumber: string): Promise<{ ok: boolean; error?: string }> {
-  const campaignId = process.env.TELNYX_10DLC_CAMPAIGN_ID;
-  if (!campaignId) return { ok: false, error: 'TELNYX_10DLC_CAMPAIGN_ID is not set' };
+  // Not the env var directly: with two filings pending, the usable one is
+  // whichever the carriers cleared, and that is only knowable by asking.
+  const resolution = await resolveUsableCampaign();
+  if (!resolution.ok) return { ok: false, error: resolution.reason };
+  const campaignId = resolution.campaignId;
 
   let last = '';
   for (let attempt = 1; attempt <= 5; attempt++) {

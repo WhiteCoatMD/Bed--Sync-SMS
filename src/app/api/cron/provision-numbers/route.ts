@@ -18,14 +18,11 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
-import { telnyxRequest } from '@/lib/telnyx';
 import { provisionLocalNumber } from '@/lib/telnyx-provisioning';
+import { resolveUsableCampaign } from '@/lib/10dlc';
 
 /** Bought per run, so a bad state cannot drain the Telnyx balance in one go. */
 const MAX_PER_RUN = 5;
-
-/** Fall back to the shared line's own area code if a dealer has no location. */
-const DEFAULT_AREA_CODE = '833';
 
 function areaCodeFor(dealer: any): string | null {
   // Prefer the store's own phone: a local number matching the store the
@@ -44,31 +41,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const campaignId = process.env.TELNYX_10DLC_CAMPAIGN_ID;
-  if (!campaignId) {
-    return NextResponse.json({ ok: true, skipped: 'TELNYX_10DLC_CAMPAIGN_ID not set' });
+  // Do nothing until a campaign can actually accept numbers. Buying them first
+  // would leave dealers holding numbers that cannot send, which is the exact
+  // failure this whole area already suffered once.
+  const resolution = await resolveUsableCampaign();
+  if (!resolution.ok) {
+    console.log('[Provision] waiting:', resolution.reason);
+    return NextResponse.json({ ok: true, waiting: true, reason: resolution.reason });
   }
-
-  // Do nothing until the campaign can actually accept numbers. Buying them
-  // first would leave dealers holding numbers that cannot send, which is the
-  // exact failure this whole area already suffered once.
-  let campaignReady = false;
-  try {
-    const c = await telnyxRequest(`/10dlc/campaign/${campaignId}`);
-    const failures = Array.isArray(c?.failureReasons) ? c.failureReasons.length : 0;
-    campaignReady = c?.status === 'ACTIVE' && failures === 0;
-    if (!campaignReady) {
-      return NextResponse.json({
-        ok: true,
-        waiting: true,
-        campaignStatus: c?.status ?? 'unknown',
-        openFindings: failures,
-      });
-    }
-  } catch (err: any) {
-    console.error('[Provision] campaign check failed:', err.message);
-    return NextResponse.json({ ok: false, error: 'campaign check failed' }, { status: 200 });
-  }
+  const campaignReady = true;
 
   const db = getServiceClient();
   const { data: dealers } = await db
@@ -81,7 +62,18 @@ export async function GET(req: NextRequest) {
   const results: any[] = [];
 
   for (const dealer of pending.slice(0, MAX_PER_RUN)) {
-    const areaCode = areaCodeFor(dealer) || DEFAULT_AREA_CODE;
+    // 833 is a toll-free prefix, so the old fallback searched for a local
+    // number in an area code that cannot have one. A dealer with no phone on
+    // file is reported instead, so somebody can go and fill it in.
+    const areaCode = areaCodeFor(dealer);
+    if (!areaCode) {
+      results.push({
+        dealer: dealer.business_name,
+        success: false,
+        error: 'no store or owner phone on file, so no area code to buy in',
+      });
+      continue;
+    }
     try {
       const r = await provisionLocalNumber(
         dealer.id,
