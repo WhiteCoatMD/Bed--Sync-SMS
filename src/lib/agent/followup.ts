@@ -109,7 +109,7 @@ export async function processPendingFollowUps(): Promise<number> {
       *,
       conversation:conversations!inner(
         id, lead_id, dealer_id, status, context, follow_up_count,
-        lead:leads!inner(phone, customer_name),
+        lead:leads!inner(phone, customer_name, phone_invalid),
         dealer:dealers!inner(id, business_name, twilio_phone, settings)
       )
     `)
@@ -123,6 +123,13 @@ export async function processPendingFollowUps(): Promise<number> {
     const conv = followUp.conversation as any;
     if (!conv || conv.status === 'handed_off' || conv.status === 'closed') {
       // Cancel follow-up if conversation is no longer active
+      await db.from('follow_ups').update({ status: 'cancelled' }).eq('id', followUp.id);
+      continue;
+    }
+
+    // The carrier has already rejected this number as non-existent. Cancel
+    // rather than skip, so the queue does not carry it forever.
+    if (conv.lead?.phone_invalid) {
       await db.from('follow_ups').update({ status: 'cancelled' }).eq('id', followUp.id);
       continue;
     }

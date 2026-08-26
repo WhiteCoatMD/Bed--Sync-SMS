@@ -23,6 +23,8 @@ interface ConversationRow {
     status: string;
     lead_score: number;
     qualification: Record<string, unknown>;
+    phone_invalid?: boolean;
+    phone_invalid_at?: string | null;
   };
 }
 
@@ -407,9 +409,17 @@ export default function AdminDashboard() {
                           HOT
                         </span>
                       )}
+                      {c.lead.phone_invalid && (
+                        <span
+                          className="text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-medium"
+                          title="The carrier rejected this number. Texts cannot reach them — call or email instead."
+                        >
+                          BAD NUMBER
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
-                      <span>{c.lead.phone}</span>
+                      <span className={c.lead.phone_invalid ? 'line-through' : undefined}>{c.lead.phone}</span>
                       <span>·</span>
                       <span>{c.message_count} msgs</span>
                       <span>·</span>

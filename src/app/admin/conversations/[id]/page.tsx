@@ -91,9 +91,29 @@ export default function ConversationDetailPage() {
     return () => clearInterval(interval);
   }, [id]);
 
+  // Scroll to the newest message only when one actually arrives.
+  //
+  // This used to depend on `data?.messages`, which is a brand new array on
+  // every 8-second poll, so the effect re-fired constantly and dragged the page
+  // down to the products panel while you were reading. Comparing the count
+  // instead means an unchanged thread stays exactly where you left it.
+  //
+  // `block: 'nearest'` keeps the scroll inside the message list rather than
+  // repositioning the whole window.
+  const lastMessageCount = useRef<number | null>(null);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [data?.messages]);
+    const count = data?.messages.length ?? 0;
+    const previous = lastMessageCount.current;
+    lastMessageCount.current = count;
+    // null means first render — land on the latest message without animating.
+    if (previous === null) {
+      messagesEndRef.current?.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (count > previous) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [data?.messages.length]);
 
   async function fetchDetail() {
     try {
@@ -353,9 +373,15 @@ export default function ConversationDetailPage() {
 
           {/* Recommendations */}
           {data.recommendations.length > 0 && (
-            <div className="mt-4 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-              <h3 className="font-semibold text-sm mb-3">🛏️ Products Shown</h3>
-              <div className="space-y-2">
+            <details className="mt-4 bg-white rounded-xl shadow-sm border border-gray-200 p-4 group">
+              {/* Collapsed by default: a long conversation can show a dozen
+                  products, and that pushed everything else off the screen. */}
+              <summary className="font-semibold text-sm cursor-pointer list-none flex items-center justify-between">
+                <span>🛏️ Products Shown ({data.recommendations.length})</span>
+                <span className="text-xs font-normal text-gray-400 group-open:hidden">show</span>
+                <span className="text-xs font-normal text-gray-400 hidden group-open:inline">hide</span>
+              </summary>
+              <div className="space-y-2 mt-3">
                 {data.recommendations.map((r) => (
                   <div key={r.id} className="flex justify-between items-center p-3 bg-blue-50 rounded-lg text-sm">
                     <div>
@@ -379,7 +405,7 @@ export default function ConversationDetailPage() {
                   </div>
                 ))}
               </div>
-            </div>
+            </details>
           )}
         </div>
 

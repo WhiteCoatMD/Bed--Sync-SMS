@@ -11,6 +11,34 @@ function getApiKey(): string {
   return key;
 }
 
+/**
+ * A Telnyx API rejection, with the error codes kept as data.
+ *
+ * The message keeps its original shape, so existing catch blocks that log it
+ * are unaffected. What changes is that a caller no longer has to pick the JSON
+ * back out of a string to find out WHY a send failed — and that matters,
+ * because some failures are permanent (the number does not exist) and some are
+ * not (a timeout), and the two deserve opposite responses.
+ */
+export class TelnyxApiError extends Error {
+  readonly status: number;
+  readonly codes: string[];
+
+  constructor(status: number, payload: unknown) {
+    super(`Telnyx API error (${status}): ${JSON.stringify(payload)}`);
+    this.name = 'TelnyxApiError';
+    this.status = status;
+    const errors = (payload as { errors?: unknown })?.errors;
+    this.codes = Array.isArray(errors)
+      ? errors.map((e) => String((e as { code?: unknown })?.code)).filter((c) => c && c !== 'undefined')
+      : [];
+  }
+
+  hasCode(code: string): boolean {
+    return this.codes.includes(code);
+  }
+}
+
 export async function telnyxRequest(path: string, method: string = 'GET', body?: Record<string, unknown>) {
   const apiKey = getApiKey();
   console.log(`[Telnyx] ${method} ${path}`);
@@ -26,7 +54,7 @@ export async function telnyxRequest(path: string, method: string = 'GET', body?:
   const data = await resp.json();
   if (!resp.ok) {
     console.error(`[Telnyx] Error ${resp.status}:`, JSON.stringify(data));
-    throw new Error(`Telnyx API error (${resp.status}): ${JSON.stringify(data)}`);
+    throw new TelnyxApiError(resp.status, data);
   }
   console.log(`[Telnyx] Success: ${data.data?.id || 'ok'}`);
   return data;

@@ -46,9 +46,18 @@ export async function POST(req: NextRequest) {
 
     // Send via Telnyx (uses existing sms.ts which already has credentials)
     const result = await sendSms(formattedPhone, message);
+    if (result.failure) {
+      // This returned success unconditionally, so a rejected number reported as
+      // a delivered outreach message.
+      console.error('[Outreach] SMS failed to:', formattedPhone, result.failure.detail);
+      return NextResponse.json(
+        { success: false, to: formattedPhone, error: result.failure.detail, permanent: result.failure.permanent },
+        { status: 502 }
+      );
+    }
 
     console.log('[Outreach] SMS sent to:', formattedPhone);
-    return NextResponse.json({ success: true, to: formattedPhone });
+    return NextResponse.json({ success: true, to: formattedPhone, message_id: result.id });
   } catch (err) {
     console.error('[Outreach Send] Error:', err);
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });

@@ -61,7 +61,7 @@ export async function processPendingReminders(): Promise<number> {
     .from('appointments')
     .select(`
       id, dealer_id, conversation_id, scheduled_at, type, status,
-      conversation:conversations!inner( id, status, lead:leads!inner(phone, customer_name) ),
+      conversation:conversations!inner( id, status, lead:leads!inner(phone, customer_name, phone_invalid) ),
       dealer:dealers!inner( id, business_name, settings )
     `)
     .in('status', ['scheduled', 'confirmed'])
@@ -95,6 +95,11 @@ export async function processPendingReminders(): Promise<number> {
     if (!conv || conv.status === 'closed' || conv.status === 'handed_off') continue;
     const phone = conv.lead && conv.lead.phone;
     if (!phone) continue;
+
+    // The carrier already told us this number does not exist. Reminding it
+    // costs an API call and tells the customer nothing; the dealer sees the
+    // bad-number flag in the dashboard and calls instead.
+    if (conv.lead.phone_invalid) continue;
 
     const settings = (dealer.settings || {}) as DealerSettings;
 

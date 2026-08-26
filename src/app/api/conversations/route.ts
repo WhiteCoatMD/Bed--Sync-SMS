@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       .from('conversations')
       .select(`
         *,
-        lead:leads!inner(id, phone, customer_name, email, source, status, lead_score, qualification, created_at),
+        lead:leads!inner(id, phone, customer_name, email, source, status, lead_score, qualification, created_at, phone_invalid, phone_invalid_at),
         dealer:dealers!inner(id, business_name)
       `)
       .eq('dealer_id', dealerId)
