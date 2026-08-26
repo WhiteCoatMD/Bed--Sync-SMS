@@ -11,6 +11,46 @@ import type { DealerSettings } from '../types';
  */
 const WINDOW_MINUTES = 180; // remind when the appointment is within the next 3 hours
 
+/**
+ * No reminder before this hour, in the store's own timezone.
+ *
+ * The three-hour window alone has no sense of time of day: a 9am appointment
+ * reminded at 6am, and an early one could text someone in the middle of the
+ * night. Holding until 7:30 costs nothing — the follow-up cron runs every five
+ * minutes, so a held reminder goes out shortly after the floor passes, and an
+ * 8am appointment still gets half an hour of notice.
+ */
+const EARLIEST_LOCAL_HOUR = 7;
+const EARLIEST_LOCAL_MINUTE = 30;
+
+/** Wall-clock hour and minute at `at`, in the given timezone. */
+function localHourMinute(timeZone: string, at: Date): { hour: number; minute: number } {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(at);
+    // Intl reports midnight as 24 in some environments; normalise it.
+    const hour = Number(parts.find((x) => x.type === 'hour')?.value ?? '0') % 24;
+    const minute = Number(parts.find((x) => x.type === 'minute')?.value ?? '0');
+    return { hour, minute };
+  } catch {
+    // An unknown timezone must not silently unlock 3am texts, so treat it as
+    // too early and let the next run try again once it is safely daytime UTC.
+    return { hour: 0, minute: 0 };
+  }
+}
+
+/** Whether it is late enough, where this store is, to text a customer. */
+function isPastQuietHours(timeZone: string, at: Date): boolean {
+  const { hour, minute } = localHourMinute(timeZone, at);
+  if (hour > EARLIEST_LOCAL_HOUR) return true;
+  if (hour < EARLIEST_LOCAL_HOUR) return false;
+  return minute >= EARLIEST_LOCAL_MINUTE;
+}
+
 export async function processPendingReminders(): Promise<number> {
   const db = getServiceClient();
   const now = new Date();
@@ -58,6 +98,12 @@ export async function processPendingReminders(): Promise<number> {
 
     const settings = (dealer.settings || {}) as DealerSettings;
     const tz = settings.timezone || 'America/Chicago';
+
+    // Too early where they are: leave it pending. The appointment stays inside
+    // the window until it starts, so this run simply skips and a later one sends.
+    if (!isPastQuietHours(tz, now)) {
+      continue;
+    }
     const when = new Date(a.scheduled_at).toLocaleString('en-US', {
       timeZone: tz, weekday: 'long', hour: 'numeric', minute: '2-digit',
     });
