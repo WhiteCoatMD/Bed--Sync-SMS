@@ -111,6 +111,7 @@ ${state === 'follow_up' ? 'Re-engage warmly. Reference something specific from b
 
 CUSTOMER CONTEXT:
 ${context.customer_name ? `Name: ${context.customer_name}` : 'Name: not yet known — ask early and use it naturally'}
+${context.interest_title ? `THEY CLICKED: ${context.interest_title}${context.interest_serial ? ` (serial ${context.interest_serial})` : ''} — the mattress they were looking at when they got in touch. Refer to it in your first message and search inventory for it before suggesting anything else. Do NOT ask what they are looking for: they already told you by clicking it.` : ''}
 ${context.mattress_size ? `Size needed: ${context.mattress_size}` : ''}
 ${context.budget_min || context.budget_max ? `Budget: $${context.budget_min || '?'} - $${context.budget_max || '?'}` : ''}
 ${context.firmness ? `Firmness: ${context.firmness}` : ''}

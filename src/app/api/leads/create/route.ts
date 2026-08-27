@@ -12,6 +12,9 @@ const CreateLeadSchema = z.object({
   email: z.string().email().optional(),
   source: z.enum(['website', 'facebook', 'google', 'manual', 'referral', 'walk_in', 'other']).default('website'),
   initial_message: z.string().optional(),
+  // What they were actually looking at on the storefront.
+  interest_serial: z.string().optional(),
+  interest_title: z.string().optional(),
   // Dealer lead-alert target + internal secret. notify_phone is honored ONLY
   // when notify_secret matches INTERNAL_API_SECRET (server-to-server), so this
   // public endpoint can't be used to text arbitrary numbers.
@@ -27,7 +30,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { dealer_id, phone, customer_name, email, source, initial_message } = parsed.data;
+    const { dealer_id, phone, customer_name, email, source, initial_message,
+            interest_serial, interest_title } = parsed.data;
     const db = getServiceClient();
 
     // Verify dealer exists and is active
@@ -127,13 +131,21 @@ export async function POST(req: NextRequest) {
         // already learned so the agent doesn't treat them as a stranger.
         const { getPriorHistory, describePriorHistory } = await import('@/lib/agent/returning');
         const prior = await getPriorHistory(db, lead.id);
+        // The mattress they clicked goes into context, not just into the
+        // opening sentence — the agent can then look it up by serial and talk
+        // about the actual item instead of asking what they were after.
+        const interest = {
+          ...(interest_serial ? { interest_serial } : {}),
+          ...(interest_title ? { interest_title } : {}),
+        };
         const seededContext = prior
           ? {
               ...prior.seed,
               ...(freshDetails.customer_name ? { customer_name: freshDetails.customer_name } : {}),
               returning_summary: describePriorHistory(prior.seed, prior.lastContactAt),
+              ...interest,
             }
-          : {};
+          : interest;
 
         const { data: newConv } = await db
           .from('conversations')

@@ -159,6 +159,9 @@ export interface Conversation {
 }
 
 export interface ConversationContext {
+  /** The mattress they clicked on the storefront before getting in touch. */
+  interest_serial?: string;
+  interest_title?: string;
   customer_name: string | null;
   mattress_size: MattressSize | null;
   budget_min: number | null;
