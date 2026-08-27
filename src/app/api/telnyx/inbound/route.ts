@@ -108,24 +108,74 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, compliance: keywordAction });
     }
 
-    // Check if this customer has an existing conversation (any dealer)
     const cleanFromPhone = from.replace(/^\+1/, '').replace(/\D/g, '');
-    const { data: existingLead } = await db
-      .from('leads')
-      .select('id, dealer_id')
-      .or(`phone.eq.${from},phone.eq.${cleanFromPhone},phone.eq.+1${cleanFromPhone}`)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
 
     let dealer: Dealer | null = null;
+
+    // Who is this reply for?
+    //
+    // Route by the LIVE CONVERSATION, not by whichever lead is newest. Picking
+    // the newest lead means a shopper who has contacted two stores has their
+    // replies handed to whichever they contacted most recently — mid-thread,
+    // silently. That is not a demo-only problem: comparing two mattress shops is
+    // the normal way people buy a mattress. It produced a real thread where one
+    // dealer's customer was given ANOTHER dealer's street address and opening
+    // hours, because the agent's whole context switched stores between messages.
+    //
+    // The dealer's own number disambiguates on its own; the shared toll-free
+    // cannot, so the open conversation is what decides.
+    // Two plain queries rather than a filter on a joined table: if a join filter
+    // silently failed to apply, this would match ANY dealer's open conversation
+    // and route every inbound message to whoever spoke most recently. An
+    // explicit lead-id list cannot fail that way.
+    const { data: phoneLeads } = await db
+      .from('leads')
+      .select('id')
+      .or(`phone.eq.${from},phone.eq.${cleanFromPhone},phone.eq.+1${cleanFromPhone}`);
+
+    const leadIds = (phoneLeads || []).map((l: { id: string }) => l.id);
+
+    const { data: activeConv } = leadIds.length
+      ? await db
+          .from('conversations')
+          .select('dealer_id, updated_at')
+          .in('lead_id', leadIds)
+          .in('status', ['active', 'follow_up'])
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : { data: null };
+
+    if (activeConv?.dealer_id) {
+      const { data: convDealer } = await db
+        .from('dealers')
+        .select('*')
+        .eq('id', activeConv.dealer_id)
+        .eq('active', true)
+        .maybeSingle();
+      dealer = convDealer;
+      if (dealer) {
+        console.log(`[Telnyx] routed ${from} to ${dealer.business_name} by open conversation`);
+      }
+    }
+
+    // No open conversation — fall back to the most recent lead, as before.
+    const { data: existingLead } = dealer
+      ? { data: null }
+      : await db
+          .from('leads')
+          .select('id, dealer_id')
+          .or(`phone.eq.${from},phone.eq.${cleanFromPhone},phone.eq.+1${cleanFromPhone}`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
     // Set when someone with no store in driving range is routed to a dealer
     // who ships. The conversation must then be about delivery, not about
     // coming in to try it.
     let shipToCustomer = false;
 
     if (existingLead) {
-      // Route to the dealer from their existing conversation
+      // Fallback only: no open conversation, so use their most recent lead.
       const { data: existingDealer } = await db
         .from('dealers')
         .select('*')
