@@ -68,6 +68,12 @@ export default function AppointmentsPage() {
     }
   }
 
+  /** Bed Sync token for the appointments API, which now scopes by dealer. */
+  function authHeaders(): Record<string, string> {
+    const token = localStorage.getItem('sms_auth_token') || localStorage.getItem('auth_token');
+    return token ? { Authorization: 'Bearer ' + token } : {};
+  }
+
   async function fetchAppointments() {
     if (!dealerId) return;
     const now = new Date().toISOString();
@@ -75,7 +81,7 @@ export default function AppointmentsPage() {
       ? `dealer_id=${dealerId}&from=${now}`
       : `dealer_id=${dealerId}&to=${now}`;
     try {
-      const res = await fetch(`/api/appointments?${params}`);
+      const res = await fetch(`/api/appointments?${params}`, { headers: authHeaders() });
       const data = await res.json();
       const sorted = (data.appointments || []).sort((a: Appointment, b: Appointment) => {
         const diff = new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime();
@@ -92,7 +98,7 @@ export default function AppointmentsPage() {
     setUpdating(id);
     await fetch('/api/appointments', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ id, status }),
     });
     await fetchAppointments();

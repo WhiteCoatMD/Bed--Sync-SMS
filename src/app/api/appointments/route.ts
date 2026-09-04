@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
+import { canAccessDealer, dealerIdForAppointment } from '@/lib/api-auth';
 
 /**
  * GET /api/appointments?dealer_id=xxx
@@ -14,6 +15,10 @@ export async function GET(req: NextRequest) {
 
     if (!dealerId) {
       return NextResponse.json({ error: 'dealer_id required' }, { status: 400 });
+    }
+
+    if (!(await canAccessDealer(req, dealerId))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const db = getServiceClient();
@@ -55,6 +60,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    if (!(await canAccessDealer(req, dealer_id))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const db = getServiceClient();
     const { data, error } = await db
       .from('appointments')
@@ -94,6 +103,13 @@ export async function PATCH(req: NextRequest) {
 
     if (!id) {
       return NextResponse.json({ error: 'id required' }, { status: 400 });
+    }
+
+    // Scope by the appointment's own dealer: the caller supplies only an id,
+    // so without this any signed-in dealer could cancel anyone's booking.
+    const owningDealerId = await dealerIdForAppointment(id);
+    if (!owningDealerId || !(await canAccessDealer(req, owningDealerId))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const db = getServiceClient();
