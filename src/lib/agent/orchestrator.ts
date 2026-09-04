@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { getServiceClient } from '../supabase';
 import { llmCost, recordCost } from '../cost';
 import { buildSystemPrompt } from './system-prompt';
+import { isBlackedOut, overlapsExisting } from '../business-hours';
 import { canTransition, shouldAutoHandoff, checkHotLeadAlert } from './state-machine';
 import { isDatetimeWithinHours, zonedWallClockToUtcIso } from '../business-hours';
 import { searchInventory, formatInventoryForAgent } from './tools/inventory-search';
@@ -218,6 +219,43 @@ export async function processMessage(
   // 4. Build conversation history for the LLM
   const chatHistory = buildChatHistory(recentMessages);
 
+  // What the agent must not offer. Without this it proposes a time, tells the
+  // customer they are booked, and the write is then refused -- the customer
+  // believes they have an appointment that does not exist.
+  let unavailable = '';
+  try {
+    const horizonStart = new Date().toISOString();
+    const horizonEnd = new Date(Date.now() + 21 * 86400000).toISOString();
+    const { data: booked } = await db
+      .from('appointments')
+      .select('scheduled_at, duration_minutes')
+      .eq('dealer_id', dealer.id)
+      .in('status', ['scheduled', 'confirmed'])
+      .gte('scheduled_at', horizonStart)
+      .lte('scheduled_at', horizonEnd)
+      .order('scheduled_at', { ascending: true })
+      .limit(40);
+
+    const tz = dealer.settings.timezone || 'America/Chicago';
+    const fmt = (iso: string) =>
+      new Date(iso).toLocaleString('en-US', {
+        timeZone: tz, weekday: 'short', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit',
+      });
+
+    const lines = (booked || []).map((b) => `- ${fmt(b.scheduled_at)} (booked)`);
+
+    for (const b of dealer.settings.blackouts || []) {
+      const end = new Date(b.end).getTime();
+      if (Number.isNaN(end) || end < Date.now()) continue;
+      lines.push(`- ${fmt(b.start)} through ${fmt(b.end)} — unavailable${b.reason ? ' (' + b.reason + ')' : ''}`);
+    }
+    unavailable = lines.join('\n');
+  } catch (e) {
+    // Worst case the agent offers a taken slot and the guard below refuses it.
+    console.error('[Agent] availability lookup failed:', (e as Error).message);
+  }
+
   // 5. Call the LLM
   const systemPrompt = buildSystemPrompt(
     dealer.business_name,
@@ -225,7 +263,8 @@ export async function processMessage(
     updatedContext,
     needsInventory && recommendations.length > 0 ? 'recommending' : currentState,
     { phone: dealer.owner_phone, website: dealer.settings.store_website },
-    dealerQuotesPrices
+    dealerQuotesPrices,
+    unavailable
   );
 
   const noPricingBusiness = !dealerQuotesPrices ? dealer.business_name : undefined;
@@ -432,11 +471,38 @@ export async function processMessage(
             dealer.settings.timezone || 'America/Chicago'
           );
           const withinHours = isDatetimeWithinHours(scheduledIso, dealer.settings);
-          if (!withinHours) {
-            console.warn('[Agent] Appointment rejected — outside business hours:', appt.datetime, '->', scheduledIso);
+          const blackout = isBlackedOut(scheduledIso, dealer.settings);
+
+          // Does it collide with something already on the books? An
+          // appointment-only store sees one customer at a time, so handing two
+          // shoppers the same 2pm is a promise it cannot keep. Checked against
+          // the whole dealer, not just this conversation.
+          const durationMinutes = appt.type === 'phone_call' ? 15 : 30;
+          const dayStart = new Date(new Date(scheduledIso).getTime() - 12 * 3600000).toISOString();
+          const dayEnd = new Date(new Date(scheduledIso).getTime() + 12 * 3600000).toISOString();
+          const { data: nearby } = await db
+            .from('appointments')
+            .select('id, scheduled_at, duration_minutes')
+            .eq('dealer_id', dealer.id)
+            .in('status', ['scheduled', 'confirmed'])
+            .gte('scheduled_at', dayStart)
+            .lte('scheduled_at', dayEnd);
+          const clashes = (nearby || []).filter((n) => !current || n.id !== current.id);
+          const doubleBooked = overlapsExisting(scheduledIso, durationMinutes, clashes);
+
+          const refusal = !withinHours
+            ? 'outside_business_hours'
+            : blackout.blocked
+              ? 'dealer_unavailable'
+              : doubleBooked
+                ? 'slot_already_booked'
+                : null;
+
+          if (refusal) {
+            console.warn(`[Agent] Appointment rejected — ${refusal}:`, appt.datetime, '->', scheduledIso);
             await db.from('agent_logs').insert({
               conversation_id: conversation.id, action: 'tool_call',
-              details: { tool: 'schedule_appointment', ...appt, rejected: 'outside_business_hours' },
+              details: { tool: 'schedule_appointment', ...appt, rejected: refusal, reason: blackout.reason ?? null },
             });
           } else if (current) {
             // Reschedule: update the existing appointment. The new scheduled_at

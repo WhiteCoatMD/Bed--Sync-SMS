@@ -132,3 +132,48 @@ export function formatHoursForPrompt(settings: DealerSettings): string {
   const end = settings.business_hours_end || '18:00';
   return `Every day: ${start} - ${end}`;
 }
+
+/**
+ * Is this instant inside a block the dealer marked unavailable?
+ *
+ * Weekly hours say when the store is normally open; they cannot say "not this
+ * Thursday, I'm at a wedding". Without this the agent would happily book into
+ * it, and for an appointment-only dealer that is a customer driving to a
+ * locked door.
+ */
+export function isBlackedOut(datetime: string, settings: DealerSettings): { blocked: boolean; reason?: string } {
+  const at = new Date(datetime).getTime();
+  if (Number.isNaN(at)) return { blocked: false };
+
+  for (const b of settings.blackouts || []) {
+    const start = new Date(b.start).getTime();
+    const end = new Date(b.end).getTime();
+    if (Number.isNaN(start) || Number.isNaN(end)) continue;
+    if (at >= start && at < end) return { blocked: true, reason: b.reason };
+  }
+  return { blocked: false };
+}
+
+/**
+ * Does a proposed slot run into one already booked?
+ *
+ * Nothing used to check. Two shoppers could be given the same 2pm, which an
+ * appointment-only store cannot honour -- they see one customer at a time.
+ * Half-open comparison so a 2:00-2:30 and a 2:30-3:00 sit side by side.
+ */
+export function overlapsExisting(
+  startIso: string,
+  durationMinutes: number,
+  existing: Array<{ scheduled_at: string; duration_minutes?: number | null }>
+): boolean {
+  const start = new Date(startIso).getTime();
+  if (Number.isNaN(start)) return false;
+  const end = start + durationMinutes * 60000;
+
+  return existing.some((e) => {
+    const eStart = new Date(e.scheduled_at).getTime();
+    if (Number.isNaN(eStart)) return false;
+    const eEnd = eStart + ((e.duration_minutes ?? 30) * 60000);
+    return start < eEnd && eStart < end;
+  });
+}

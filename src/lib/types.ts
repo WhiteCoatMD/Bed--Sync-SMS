@@ -88,6 +88,13 @@ export interface DealerSettings {
    */
   ships_nationwide?: boolean;
   /**
+   * Times the dealer is not available, on top of their weekly hours: a holiday,
+   * a delivery run, a week off. ISO instants, half-open [start, end).
+   * An appointment-only dealer has no counter staff to fall back on, so a
+   * booking landing in one of these is a customer arriving at a locked door.
+   */
+  blackouts?: Array<{ start: string; end: string; reason?: string }>;
+  /**
    * The store has no walk-in showroom — every visit is a booked appointment.
    * True for Mattress By Appointment dealers. The agent still invites people in
    * to lie on a mattress; it just has to say a time gets booked first, or we

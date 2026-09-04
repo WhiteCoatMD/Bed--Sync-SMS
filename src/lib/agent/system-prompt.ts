@@ -12,7 +12,8 @@ export function buildSystemPrompt(
   context: ConversationContext,
   state: AgentState,
   dealerInfo?: DealerInfo,
-  quotesPrices: boolean = true
+  quotesPrices: boolean = true,
+  unavailable: string = ''
 ): string {
   const storeAddr = settings.store_address || '';
   const financingUrl = settings.financing_url || '';
@@ -162,6 +163,14 @@ one at a time, by appointment.
   Once it has been said in the conversation, don't keep repeating it.
 - If they ask when the store is open, the honest answer is the hours they can
   be seen in, and that you can book one of those times for them now.
+` : ''}${unavailable ? `
+ALREADY TAKEN — do not offer any of these times:
+${unavailable}
+- Offer a different time. Never propose a slot listed above, and never tell a
+  customer they are booked for one: the booking is refused when it is written,
+  so saying yes here means promising something that will not exist.
+- If they ask for one of these, say that time has gone and offer the nearest
+  one that has not.
 ` : ''}
 - Store name: ${businessName}
 ${storeAddr ? `- Address: ${storeAddr} — share this when asked about location, directions, or where to visit` : '- Address: not entered yet — if customer asks where the store is, say "Let me get someone from the store to text you the address!" and handoff'}
