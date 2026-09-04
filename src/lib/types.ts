@@ -88,6 +88,13 @@ export interface DealerSettings {
    */
   ships_nationwide?: boolean;
   /**
+   * The store has no walk-in showroom — every visit is a booked appointment.
+   * True for Mattress By Appointment dealers. The agent still invites people in
+   * to lie on a mattress; it just has to say a time gets booked first, or we
+   * send someone to a locked door.
+   */
+  appointment_only?: boolean;
+  /**
    * A seeded storefront that must never send a real message. Its leads carry
    * placeholder numbers. Checked by routing, number provisioning and reminders;
    * declared here so the next sender does not have to rediscover it.
