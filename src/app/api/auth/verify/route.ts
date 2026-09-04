@@ -126,6 +126,13 @@ export async function POST(req: NextRequest) {
       // The store's own timezone. Appointment times must be shown in it —
       // that is when the customer walks in, and what the agent told them.
       timezone: (dealer.settings as { timezone?: string } | null)?.timezone || 'America/Chicago',
+      // Bed Sync's dealer_type, so the dashboard can show MBA-only tools.
+      // Only meaningful when a dealer is viewing their own account; a
+      // super-admin using the dealer switcher is carrying their own type, so
+      // this reports null rather than guessing.
+      dealer_type: viewingAsAdmin ? null : (bedsyncUser.dealer_type || null),
+      blackouts: (dealer.settings as { blackouts?: unknown } | null)?.blackouts || [],
+      appointment_only: (dealer.settings as { appointment_only?: boolean } | null)?.appointment_only === true,
     });
 
   } catch (err) {

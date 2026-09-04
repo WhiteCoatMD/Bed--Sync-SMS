@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
+import { canAccessDealer } from '@/lib/api-auth';
 
 /**
  * GET /api/dealers/settings?dealer_id=X - Get dealer settings
@@ -9,6 +10,10 @@ export async function GET(req: NextRequest) {
   try {
     const dealerId = req.nextUrl.searchParams.get('dealer_id');
     if (!dealerId) return NextResponse.json({ error: 'dealer_id required' }, { status: 400 });
+
+    if (!(await canAccessDealer(req, dealerId))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     const db = getServiceClient();
     const { data, error } = await db
@@ -32,6 +37,12 @@ export async function PUT(req: NextRequest) {
 
     if (!dealer_id || !settings) {
       return NextResponse.json({ error: 'dealer_id and settings required' }, { status: 400 });
+    }
+
+    // This route had no auth at all: a dealer_id off the request body was
+    // enough to rewrite anyone's hours, promotions or store phone.
+    if (!(await canAccessDealer(req, dealer_id))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const db = getServiceClient();
