@@ -10,7 +10,11 @@ export async function POST(req: NextRequest) {
   try {
     const { phone, message, name, business_name, city, state, campaign, secret } = await req.json();
 
-    if (secret !== process.env.INTERNAL_API_SECRET) {
+    // Fail CLOSED when the secret is not configured. `secret !== undefined`
+    // is false when both sides are undefined, so an unset env turned this
+    // send-an-SMS endpoint into an open one.
+    const expected = process.env.INTERNAL_API_SECRET;
+    if (!expected || secret !== expected) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

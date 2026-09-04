@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
+import { canAccessDealer } from '@/lib/api-auth';
 
 /**
  * GET /api/conversations
@@ -15,6 +16,13 @@ export async function GET(req: NextRequest) {
 
     if (!dealerId) {
       return NextResponse.json({ error: 'dealer_id required' }, { status: 400 });
+    }
+
+    // This returned every conversation for a dealer -- customer names, phone
+    // numbers, emails and the full agent context -- to anyone who knew a
+    // dealer id, with no auth on the route at all.
+    if (!(await canAccessDealer(req, dealerId))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const db = getServiceClient();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
+import { canAccessDealer } from '@/lib/api-auth';
 
 /**
  * GET /api/dealers/billing-alert?dealer_id=X
@@ -10,6 +11,9 @@ export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const dealerId = url.searchParams.get('dealer_id');
+    if (!dealerId || !(await canAccessDealer(req, dealerId))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     if (!dealerId) {
       return NextResponse.json({ error: 'dealer_id required' }, { status: 400 });

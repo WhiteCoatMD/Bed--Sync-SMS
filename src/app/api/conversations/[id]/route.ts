@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
+import { canAccessDealer, dealerIdForConversation } from '@/lib/api-auth';
 import { sendAndTrack } from '@/lib/sms';
 
 /**
@@ -12,6 +13,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const scopeDealer = await dealerIdForConversation(id);
+    if (!scopeDealer || !(await canAccessDealer(req, scopeDealer))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const db = getServiceClient();
 
     const { data: conversation } = await db
@@ -75,6 +80,10 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+    const scopeDealer = await dealerIdForConversation(id);
+    if (!scopeDealer || !(await canAccessDealer(req, scopeDealer))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const body = await req.json();
     const db = getServiceClient();
 
@@ -120,6 +129,10 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    const scopeDealer = await dealerIdForConversation(id);
+    if (!scopeDealer || !(await canAccessDealer(req, scopeDealer))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const { message } = await req.json();
 
     if (!message) {

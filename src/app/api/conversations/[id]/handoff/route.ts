@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
+import { canAccessDealer, dealerIdForConversation } from '@/lib/api-auth';
 import { triggerHandoff } from '@/lib/agent/handoff';
 import type { Conversation, Dealer } from '@/lib/types';
 
@@ -13,6 +14,10 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    const scopeDealer = await dealerIdForConversation(id);
+    if (!scopeDealer || !(await canAccessDealer(req, scopeDealer))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const { reason } = await req.json();
 
     const db = getServiceClient();

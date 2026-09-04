@@ -6,6 +6,7 @@ import { scheduleFollowUp } from '@/lib/agent/followup';
 import { triggerHandoff } from '@/lib/agent/handoff';
 import type { Conversation, Lead, Dealer, Message, DealerSettings } from '@/lib/types';
 import { z } from 'zod';
+import { canAccessDealer, dealerIdForConversation, hasInternalSecret } from '@/lib/api-auth';
 
 const ProcessSchema = z.object({
   conversation_id: z.string().uuid(),
@@ -27,6 +28,14 @@ export async function POST(req: NextRequest) {
     }
 
     const { conversation_id, message } = parsed.data;
+
+    // Unauthenticated, this let anyone holding a conversation id put words in
+    // the agent's mouth: it runs the model and SENDS the reply to a real
+    // customer, on the dealer's number, at our cost.
+    const scopeDealer = await dealerIdForConversation(conversation_id);
+    if (!hasInternalSecret(req) && (!scopeDealer || !(await canAccessDealer(req, scopeDealer)))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const db = getServiceClient();
 
     // Load conversation with relations

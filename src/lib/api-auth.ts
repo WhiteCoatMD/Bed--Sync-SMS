@@ -64,3 +64,26 @@ export async function dealerIdForAppointment(appointmentId: string): Promise<str
     .maybeSingle();
   return data?.dealer_id ?? null;
 }
+
+/** The dealer a conversation belongs to, for scoping by conversation id. */
+export async function dealerIdForConversation(conversationId: string): Promise<string | null> {
+  const db = getServiceClient();
+  const { data } = await db
+    .from('conversations')
+    .select('dealer_id')
+    .eq('id', conversationId)
+    .maybeSingle();
+  return data?.dealer_id ?? null;
+}
+
+/**
+ * Server-to-server only. Fails CLOSED when the secret is not configured:
+ * comparing an unset env to an absent header is undefined !== undefined, which
+ * is false, so a missing secret would have let everyone through.
+ */
+export function hasInternalSecret(req: NextRequest): boolean {
+  const secret = process.env.INTERNAL_API_SECRET;
+  if (!secret) return false;
+  const supplied = req.headers.get('x-internal-secret') || req.headers.get('x-api-key');
+  return supplied === secret || supplied === process.env.BEDSYNC_API_KEY;
+}

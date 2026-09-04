@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '@/lib/supabase';
 import { provisionLocalNumber } from '@/lib/telnyx-provisioning';
 import { z } from 'zod';
+import { hasInternalSecret } from '@/lib/api-auth';
 import type { Plan } from '@/lib/types';
 import { resolveUsableCampaign } from '@/lib/10dlc';
 
@@ -28,6 +29,12 @@ const SignupSchema = z.object({
  */
 export async function POST(req: NextRequest) {
   try {
+    // This creates a dealer and calls provisionLocalNumber, so an open route
+    // was an endpoint that spends money: anyone could make us buy a phone
+    // number, repeatedly. Server-to-server only.
+    if (!hasInternalSecret(req)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const body = await req.json();
     const parsed = SignupSchema.safeParse(body);
     if (!parsed.success) {
