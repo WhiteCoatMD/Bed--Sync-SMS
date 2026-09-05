@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * Availability editor for appointment-only dealers.
+ * Availability editor. Shown to every dealer: a walk-in store still needs to
+ * tell the assistant when it is open and when it is away.
  *
  * Two controls, because availability is really two questions and cramming them
  * into one is what made the first version cumbersome:

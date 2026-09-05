@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { adminFetch } from '@/lib/admin-fetch';
 
 interface Message {
   id: string;
@@ -117,7 +118,7 @@ export default function ConversationDetailPage() {
 
   async function fetchDetail() {
     try {
-      const res = await fetch(`/api/conversations/${id}`);
+      const res = await adminFetch(`/api/conversations/${id}`);
       const json = await res.json();
       if (json.success) setData(json.conversation);
     } catch (err) {
@@ -129,7 +130,7 @@ export default function ConversationDetailPage() {
   async function handleHandoff() {
     const reason = prompt('Reason for handoff (optional):');
     if (reason === null) return; // cancelled
-    await fetch(`/api/conversations/${id}/handoff`, {
+    await adminFetch(`/api/conversations/${id}/handoff`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason: reason || 'Manual takeover from dashboard' }),
@@ -138,7 +139,7 @@ export default function ConversationDetailPage() {
   }
 
   async function handleResume() {
-    await fetch(`/api/conversations/${id}/resume`, {
+    await adminFetch(`/api/conversations/${id}/resume`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -149,7 +150,7 @@ export default function ConversationDetailPage() {
   async function handleSendManual() {
     if (!manualMessage.trim()) return;
     setSending(true);
-    await fetch(`/api/conversations/${id}`, {
+    await adminFetch(`/api/conversations/${id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: manualMessage }),
@@ -162,7 +163,7 @@ export default function ConversationDetailPage() {
 
   async function handleOutcome(outcome: 'won' | 'lost') {
     setSavingOutcome(true);
-    await fetch(`/api/conversations/${id}`, {
+    await adminFetch(`/api/conversations/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -178,7 +179,7 @@ export default function ConversationDetailPage() {
 
   async function handleClearOutcome() {
     setSavingOutcome(true);
-    await fetch(`/api/conversations/${id}`, {
+    await adminFetch(`/api/conversations/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ outcome: null, outcome_details: null, outcome_product: null }),

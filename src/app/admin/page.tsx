@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { resolveAdminSession } from '@/lib/admin-session';
+import { adminFetch } from '@/lib/admin-fetch';
 
 interface ConversationRow {
   id: string;
@@ -156,7 +157,7 @@ export default function AdminDashboard() {
   async function fetchConversations() {
     if (!dealerId) return;
     try {
-      const res = await fetch(`/api/conversations?dealer_id=${dealerId}&limit=200`);
+      const res = await adminFetch(`/api/conversations?dealer_id=${dealerId}&limit=200`);
       const data = await res.json();
       setAllConversations(data.conversations || []);
     } catch (err) {
@@ -168,7 +169,7 @@ export default function AdminDashboard() {
   async function acknowledgeHandoff(conversationId: string) {
     setAcknowledging(conversationId);
     try {
-      await fetch(`/api/conversations/${conversationId}/acknowledge`, { method: 'POST' });
+      await adminFetch(`/api/conversations/${conversationId}/acknowledge`, { method: 'POST' });
       setAllConversations((prev) =>
         prev.map((c) =>
           c.id === conversationId

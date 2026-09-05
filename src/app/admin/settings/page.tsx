@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { resolveAdminSession } from '@/lib/admin-session';
+import { adminFetch } from '@/lib/admin-fetch';
 
 interface DealerData {
   id: string;
@@ -88,7 +89,7 @@ export default function SettingsPage() {
 
   async function loadSettings(id: string) {
     try {
-      const res = await fetch(`/api/dealers/settings?dealer_id=${id}`);
+      const res = await adminFetch(`/api/dealers/settings?dealer_id=${id}`);
       const data = await res.json();
       if (data.success && data.dealer) {
         setDealer(data.dealer);
@@ -123,7 +124,7 @@ export default function SettingsPage() {
     setSaving(true);
     setSaved(false);
     try {
-      const res = await fetch('/api/dealers/settings', {
+      const res = await adminFetch('/api/dealers/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -159,7 +160,7 @@ export default function SettingsPage() {
     setSyncing(true);
     setSyncResult(null);
     try {
-      const res = await fetch('/api/inventory/sync', {
+      const res = await adminFetch('/api/inventory/sync', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

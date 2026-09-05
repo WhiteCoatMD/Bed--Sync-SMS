@@ -239,10 +239,12 @@ export default function AppointmentsPage() {
     grouped[day].push(a);
   });
 
-  // The old panel asked for two datetime-local values to say "I am away next
-  // week". Replaced by an availability editor: weekly hours plus a month
-  // calendar you click. Same two settings underneath.
-  const blockPanel = dealerType === 'mba' ? (
+  // Every dealer, not just MBA. Hours, time off and no double booking matter
+  // to a walk-in store too -- Mattress Folks takes appointments alongside
+  // walk-ins, and had no way to tell the assistant when they are closed.
+  // dealerType is still read; it is what decides the appointment-only wording
+  // the agent uses, which is a different question from who gets the editor.
+  const blockPanel = dealerId ? (
     <AvailabilityPanel
       timezone={timezone || 'America/Chicago'}
       initialDayHours={dayHours}
