@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { resolveAdminSession } from '@/lib/admin-session';
 import AvailabilityPanel, { type Blackout, type DayHours } from './AvailabilityPanel';
+import { zonedWallClockToUtcIso } from '@/lib/business-hours';
 
 
 interface Appointment {
@@ -46,6 +47,15 @@ export default function AppointmentsPage() {
   const [dealerType, setDealerType] = useState<string | null>(null);
   const [blackouts, setBlackouts] = useState<Blackout[]>([]);
   const [dayHours, setDayHours] = useState<Record<string, DayHours> | null>(null);
+  // Manual booking: a walk-in or a phone call the dealer takes themselves.
+  const [showAdd, setShowAdd] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addPhone, setAddPhone] = useState('');
+  const [addWhen, setAddWhen] = useState('');
+  const [addType, setAddType] = useState('showroom_visit');
+  const [addNotes, setAddNotes] = useState('');
+  const [addErr, setAddErr] = useState<string | null>(null);
+  const [addBusy, setAddBusy] = useState(false);
   // Store timezone, so a dealer viewing from another zone (or a franchisor,
   // or a travelling owner) still sees the time the customer will arrive.
   const [timezone, setTimezone] = useState<string | undefined>(undefined);
@@ -121,6 +131,46 @@ export default function AppointmentsPage() {
       time: new Date(a.scheduled_at).toLocaleTimeString('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }),
       who: a.lead?.customer_name || a.lead?.phone || '',
     });
+  }
+
+  async function addAppointment() {
+    setAddErr(null);
+    if (!addName.trim() && !addPhone.trim()) { setAddErr('Add a name or a phone number.'); return; }
+    if (!addWhen) { setAddErr('Pick a date and time.'); return; }
+    setAddBusy(true);
+    try {
+      // The picker gives store-local wall clock; send the real instant so the
+      // booking means the same moment to the dealer and to the assistant.
+      const scheduled_at = zonedWallClockToUtcIso(addWhen.replace('T', ' ') + ':00', timezone || 'America/Chicago');
+      const res = await fetch('/api/appointments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          dealer_id: dealerId,
+          customer_name: addName.trim() || null,
+          phone: addPhone.trim() || null,
+          scheduled_at,
+          type: addType,
+          notes: addNotes.trim() || null,
+          created_by: 'human',
+        }),
+      });
+      const data = await res.json();
+      if (res.status === 409) {
+        const at = new Date(data.conflict_at).toLocaleString('en-US',
+          { timeZone: timezone, weekday: 'short', hour: 'numeric', minute: '2-digit' });
+        setAddErr(`You already have an appointment at ${at}. Pick another time.`);
+        return;
+      }
+      if (!res.ok || !data.success) { setAddErr(data.error || 'Could not add it.'); return; }
+      setAddName(''); setAddPhone(''); setAddWhen(''); setAddNotes('');
+      setShowAdd(false);
+      await fetchAppointments();
+    } catch (e) {
+      setAddErr((e as Error).message);
+    } finally {
+      setAddBusy(false);
+    }
   }
 
   async function saveAvailability(patch: { day_hours: Record<string, DayHours>; blackouts: Blackout[] }) {
@@ -210,6 +260,75 @@ export default function AppointmentsPage() {
             Conversations
           </Link>
         </div>
+      </div>
+
+      <div className="bg-ink-card border border-ink-border rounded-xl p-4 mb-6">
+        <button
+          onClick={() => setShowAdd((v) => !v)}
+          className="w-full flex items-center gap-3 text-left"
+          aria-expanded={showAdd}
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-600/15 text-lg" aria-hidden>
+            &#10133;
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-ink-text">Add an appointment</span>
+            <span className="block text-xs text-ink-muted">Someone who called or walked in</span>
+          </span>
+          <span className="flex items-center gap-1.5 shrink-0 rounded-full bg-brand-600 px-3 py-1 text-xs font-semibold text-white">
+            {showAdd ? 'Close' : 'Add'}
+            <span aria-hidden>{showAdd ? '\u25B4' : '\u25BE'}</span>
+          </span>
+        </button>
+
+        {showAdd && (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs text-ink-muted">
+              Customer name
+              <input value={addName} onChange={(e) => setAddName(e.target.value)} maxLength={80}
+                placeholder="Sarah Nguyen"
+                className="mt-1 block w-full bg-ink-hover border border-ink-border rounded-md px-2 py-1.5 text-sm text-ink-text placeholder-ink-faint" />
+            </label>
+            <label className="text-xs text-ink-muted">
+              Phone <span className="text-ink-faint">(optional)</span>
+              <input value={addPhone} onChange={(e) => setAddPhone(e.target.value)} maxLength={20}
+                placeholder="386-555-0100"
+                className="mt-1 block w-full bg-ink-hover border border-ink-border rounded-md px-2 py-1.5 text-sm text-ink-text placeholder-ink-faint" />
+            </label>
+            <label className="text-xs text-ink-muted">
+              Date and time
+              <input type="datetime-local" value={addWhen} onChange={(e) => setAddWhen(e.target.value)}
+                className="mt-1 block w-full bg-ink-hover border border-ink-border rounded-md px-2 py-1.5 text-sm text-ink-text" />
+            </label>
+            <label className="text-xs text-ink-muted">
+              Type
+              <select value={addType} onChange={(e) => setAddType(e.target.value)}
+                className="mt-1 block w-full bg-ink-hover border border-ink-border rounded-md px-2 py-1.5 text-sm text-ink-text">
+                <option value="showroom_visit">Showroom visit</option>
+                <option value="phone_call">Phone call</option>
+                <option value="delivery">Delivery</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label className="text-xs text-ink-muted sm:col-span-2">
+              Notes <span className="text-ink-faint">(optional)</span>
+              <input value={addNotes} onChange={(e) => setAddNotes(e.target.value)} maxLength={200}
+                placeholder="Queen, side sleeper"
+                className="mt-1 block w-full bg-ink-hover border border-ink-border rounded-md px-2 py-1.5 text-sm text-ink-text placeholder-ink-faint" />
+            </label>
+
+            <div className="sm:col-span-2 flex items-center gap-3">
+              <button onClick={addAppointment} disabled={addBusy}
+                className="bg-brand-600 text-white text-sm font-semibold px-4 py-1.5 rounded-md disabled:opacity-50">
+                {addBusy ? 'Adding\u2026' : 'Add appointment'}
+              </button>
+              <span className="text-xs text-ink-faint">
+                We will not text them &mdash; they have not opted in.
+              </span>
+            </div>
+            {addErr && <p className="sm:col-span-2 text-xs text-red-400">{addErr}</p>}
+          </div>
+        )}
       </div>
 
       {blockPanel}

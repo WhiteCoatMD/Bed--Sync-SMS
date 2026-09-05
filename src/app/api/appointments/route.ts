@@ -54,9 +54,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { dealer_id, conversation_id, lead_id, type, scheduled_at, duration_minutes, notes, created_by } = body;
+    const {
+      dealer_id, type, scheduled_at, duration_minutes, notes, created_by,
+      customer_name, phone,
+    } = body;
+    let { conversation_id, lead_id } = body;
 
-    if (!dealer_id || !conversation_id || !lead_id || !scheduled_at) {
+    if (!dealer_id || !scheduled_at) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -65,6 +69,91 @@ export async function POST(req: NextRequest) {
     }
 
     const db = getServiceClient();
+
+    // A walk-in the dealer books by hand has no conversation and no lead, but
+    // both columns are NOT NULL, so make them. Doing it this way rather than
+    // loosening the schema keeps the manual booking visible to everything else:
+    // it shows a name in the list, and the agent's double-booking check counts
+    // it like any other.
+    if (!conversation_id || !lead_id) {
+      if (!customer_name && !phone) {
+        return NextResponse.json(
+          { error: 'A name or phone number is needed for a manual appointment' },
+          { status: 400 }
+        );
+      }
+
+      // A dealer typing a customer's number into a booking box is NOT SMS
+      // consent. A non-numeric placeholder can never match an inbound message,
+      // so a blank phone cannot accidentally attach this person to a real
+      // conversation later.
+      const leadPhone = (phone || '').trim() || `no-phone-${Date.now().toString(36)}`;
+
+      const { data: existing } = await db
+        .from('leads')
+        .select('id')
+        .eq('dealer_id', dealer_id)
+        .eq('phone', leadPhone)
+        .maybeSingle();
+
+      if (existing) {
+        lead_id = existing.id;
+      } else {
+        const { data: newLead, error: leadErr } = await db
+          .from('leads')
+          .insert({
+            dealer_id,
+            phone: leadPhone,
+            customer_name: customer_name || null,
+            source: 'manual',
+            status: 'new',
+          })
+          .select('id')
+          .single();
+        if (leadErr || !newLead) {
+          return NextResponse.json({ error: leadErr?.message || 'Could not create the customer' }, { status: 500 });
+        }
+        lead_id = newLead.id;
+      }
+
+      // 'closed' on purpose: the reminder job skips closed conversations, so
+      // booking a walk-in never sends them a text they did not ask for.
+      const { data: conv, error: convErr } = await db
+        .from('conversations')
+        .insert({ dealer_id, lead_id, status: 'closed', agent_state: 'closing' })
+        .select('id')
+        .single();
+      if (convErr || !conv) {
+        return NextResponse.json({ error: convErr?.message || 'Could not create the booking' }, { status: 500 });
+      }
+      conversation_id = conv.id;
+    }
+
+    // Refuse a clash rather than quietly creating one -- an appointment-only
+    // store sees one customer at a time, which is the whole point of the guard
+    // the agent already obeys.
+    const wanted = new Date(scheduled_at).getTime();
+    const mins = duration_minutes || (type === 'phone_call' ? 15 : 30);
+    const { data: nearby } = await db
+      .from('appointments')
+      .select('scheduled_at, duration_minutes')
+      .eq('dealer_id', dealer_id)
+      .in('status', ['scheduled', 'confirmed'])
+      .gte('scheduled_at', new Date(wanted - 12 * 3600000).toISOString())
+      .lte('scheduled_at', new Date(wanted + 12 * 3600000).toISOString());
+
+    const clash = (nearby || []).find((n) => {
+      const s = new Date(n.scheduled_at).getTime();
+      const e = s + ((n.duration_minutes ?? 30) * 60000);
+      return wanted < e && s < wanted + mins * 60000;
+    });
+    if (clash) {
+      return NextResponse.json(
+        { error: 'double_booked', conflict_at: clash.scheduled_at },
+        { status: 409 }
+      );
+    }
+
     const { data, error } = await db
       .from('appointments')
       .insert({
@@ -73,7 +162,7 @@ export async function POST(req: NextRequest) {
         lead_id,
         type: type || 'showroom_visit',
         scheduled_at,
-        duration_minutes: duration_minutes || 30,
+        duration_minutes: mins,
         status: 'scheduled',
         notes: notes || null,
         created_by: created_by || 'human',
