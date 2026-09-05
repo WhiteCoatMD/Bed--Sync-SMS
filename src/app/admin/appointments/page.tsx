@@ -99,7 +99,15 @@ export default function AppointmentsPage() {
         setBlackouts(Array.isArray(data.blackouts) ? data.blackouts : []);
         setDayHours(data.day_hours || null);
       } else {
-        setAuthError('Not authorized.');
+        // "Not authorized" is meaningless to a dealer whose SMS account simply
+        // was never finished provisioning -- which is a real state: the add-on
+        // toggle used to write the flag and then throw before creating the
+        // record, leaving the dealer switched on with nothing behind it.
+        setAuthError(
+          data.error === 'No SMS account linked'
+            ? 'Your AI SMS agent is not finished setting up yet, so there is nothing to show here. Bed Sync support can finish it for you.'
+            : 'This account cannot open the SMS dashboard.'
+        );
         setLoading(false);
       }
     } catch {
