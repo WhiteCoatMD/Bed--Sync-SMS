@@ -46,6 +46,24 @@ function fullDayBlackout(date: string, tz: string, reason?: string): Blackout {
   };
 }
 
+/** Block just part of a day, e.g. 14:00-16:00 on 2026-09-10, in store time. */
+function partialBlackout(date: string, from: string, to: string, tz: string, reason?: string): Blackout {
+  return {
+    start: zonedWallClockToUtcIso(`${date} ${from}:00`, tz),
+    end: zonedWallClockToUtcIso(`${date} ${to}:00`, tz),
+    reason,
+  };
+}
+
+/** Does this blackout cover the whole of `date` in store time? */
+function coversWholeDay(b: Blackout, date: string, tz: string): boolean {
+  const dayStart = new Date(zonedWallClockToUtcIso(`${date} 00:00:00`, tz)).getTime();
+  const next = new Date(date + 'T12:00:00Z');
+  next.setUTCDate(next.getUTCDate() + 1);
+  const dayEnd = new Date(zonedWallClockToUtcIso(`${ymd(next)} 00:00:00`, tz)).getTime();
+  return new Date(b.start).getTime() <= dayStart && new Date(b.end).getTime() >= dayEnd;
+}
+
 /** Which dates a set of blackouts covers for the whole day, for the calendar. */
 function blockedDates(blackouts: Blackout[], tz: string): Set<string> {
   const out = new Set<string>();
@@ -67,12 +85,14 @@ export default function AvailabilityPanel({
   initialDayHours,
   initialBlackouts,
   bookedDates,
+  appointmentsByDate,
   onSave,
 }: {
   timezone: string;
   initialDayHours: Record<string, DayHours> | null;
   initialBlackouts: Blackout[];
   bookedDates: Set<string>;
+  appointmentsByDate: Record<string, { time: string; who: string }[]>;
   onSave: (patch: { day_hours: Record<string, DayHours>; blackouts: Blackout[] }) => Promise<boolean>;
 }) {
   const [dayHours, setDayHours] = useState<Record<string, DayHours>>(() => {
@@ -84,6 +104,10 @@ export default function AvailabilityPanel({
   });
   const [blackouts, setBlackouts] = useState<Blackout[]>(initialBlackouts);
   const [cursor, setCursor] = useState(() => new Date());
+  const [selected, setSelected] = useState<string | null>(null);
+  const [fromTime, setFromTime] = useState('12:00');
+  const [toTime, setToTime] = useState('14:00');
+  const [dayErr, setDayErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -114,19 +138,44 @@ export default function AvailabilityPanel({
     setDirty(true);
   }
 
-  function toggleDate(d: Date) {
-    const key = ymd(d);
-    if (blocked.has(key)) {
-      // Drop any blackout that covers this date.
-      setBlackouts((prev) =>
-        prev.filter((b) => !blockedDates([b], timezone).has(key))
-      );
+  const sortBlocks = (list: Blackout[]) =>
+    [...list].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+  /** Blocks touching this date, so the day panel can list and remove them. */
+  function blocksOn(date: string): Blackout[] {
+    return blackouts.filter((b) => blockedDates([b], timezone).has(date));
+  }
+
+  function isWholeDayBlocked(date: string) {
+    return blocksOn(date).some((b) => coversWholeDay(b, date, timezone));
+  }
+
+  function toggleWholeDay(date: string) {
+    setDayErr(null);
+    if (isWholeDayBlocked(date)) {
+      setBlackouts((prev) => prev.filter((b) => !coversWholeDay(b, date, timezone)));
     } else {
-      setBlackouts((prev) => [...prev, fullDayBlackout(key, timezone)]
-        .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()));
+      // Replace any part-day blocks on this date -- the whole day covers them.
+      const kept = blackouts.filter((b) => !blockedDates([b], timezone).has(date));
+      setBlackouts(sortBlocks([...kept, fullDayBlackout(date, timezone)]));
     }
     setDirty(true);
   }
+
+  function addPartial(date: string) {
+    setDayErr(null);
+    if (fromTime >= toTime) { setDayErr('The end time has to be after the start.'); return; }
+    setBlackouts((prev) => sortBlocks([...prev, partialBlackout(date, fromTime, toTime, timezone)]));
+    setDirty(true);
+  }
+
+  function removeBlock(b: Blackout) {
+    setBlackouts((prev) => prev.filter((x) => !(x.start === b.start && x.end === b.end)));
+    setDirty(true);
+  }
+
+  const hhmm = (iso: string) =>
+    new Date(iso).toLocaleTimeString('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' });
 
   async function save() {
     setSaving(true);
@@ -212,7 +261,7 @@ export default function AvailabilityPanel({
             className="px-2 py-0.5 text-gray-500 hover:bg-gray-100 rounded" aria-label="Next month">&#8250;</button>
         </div>
       </div>
-      <p className="text-xs text-gray-500 mb-2">Click a day to block it. Click again to unblock.</p>
+      <p className="text-xs text-gray-500 mb-2">Click a day to block the whole day, or just the hours you are busy.</p>
 
       <div className="grid grid-cols-7 gap-1 mb-1">
         {DAY_SHORT.map((d, i) => (
@@ -230,7 +279,7 @@ export default function AvailabilityPanel({
           return (
             <button
               key={i}
-              onClick={() => !isPast && toggleDate(d)}
+              onClick={() => !isPast && setSelected(key)}
               disabled={isPast}
               title={
                 isPast ? 'in the past'
@@ -240,6 +289,7 @@ export default function AvailabilityPanel({
               }
               className={[
                 'relative aspect-square rounded-md text-sm transition',
+                selected === key ? 'ring-2 ring-brand-900 ring-offset-1' : '',
                 isPast ? 'text-gray-300 cursor-default'
                   : isBlocked ? 'bg-red-600 text-white font-semibold'
                   : weeklyClosed ? 'bg-gray-100 text-gray-400'
@@ -254,6 +304,65 @@ export default function AvailabilityPanel({
           );
         })}
       </div>
+
+      {selected && (
+        <div className="mt-3 border border-gray-200 rounded-lg p-3 bg-gray-50">
+          <div className="flex items-center justify-between mb-2">
+            <strong className="text-sm text-gray-900">
+              {new Date(selected + 'T12:00:00Z').toLocaleDateString('en-US',
+                { weekday: 'long', month: 'long', day: 'numeric' })}
+            </strong>
+            <button onClick={() => setSelected(null)} className="text-xs text-gray-400 hover:text-gray-700">close</button>
+          </div>
+
+          {(appointmentsByDate[selected] || []).length > 0 && (
+            <p className="text-xs text-blue-700 mb-2">
+              Booked: {(appointmentsByDate[selected] || []).map((a) => `${a.time} ${a.who}`).join(', ')}
+            </p>
+          )}
+
+          <label className="flex items-center gap-2 mb-3 cursor-pointer">
+            <input type="checkbox" checked={isWholeDayBlocked(selected)}
+              onChange={() => toggleWholeDay(selected)} className="h-4 w-4" />
+            <span className="text-sm text-gray-800">Block the whole day</span>
+          </label>
+
+          {!isWholeDayBlocked(selected) && (
+            <>
+              <div className="flex flex-wrap items-end gap-2 mb-2">
+                <label className="text-xs text-gray-600">
+                  Busy from
+                  <input type="time" value={fromTime} onChange={(e) => setFromTime(e.target.value)}
+                    className="block mt-0.5 border border-gray-300 rounded-md px-2 py-1 text-sm" />
+                </label>
+                <label className="text-xs text-gray-600">
+                  until
+                  <input type="time" value={toTime} onChange={(e) => setToTime(e.target.value)}
+                    className="block mt-0.5 border border-gray-300 rounded-md px-2 py-1 text-sm" />
+                </label>
+                <button onClick={() => addPartial(selected)}
+                  className="bg-gray-800 text-white text-sm px-3 py-1.5 rounded-md">Block these hours</button>
+              </div>
+              {dayErr && <p className="text-xs text-red-600 mb-2">{dayErr}</p>}
+            </>
+          )}
+
+          {blocksOn(selected).length > 0 ? (
+            <ul className="divide-y divide-gray-200 border border-gray-200 rounded-md bg-white">
+              {blocksOn(selected).map((b, i) => (
+                <li key={b.start + i} className="flex items-center justify-between px-2 py-1.5">
+                  <span className="text-sm text-gray-800">
+                    {coversWholeDay(b, selected, timezone) ? 'All day' : `${hhmm(b.start)} – ${hhmm(b.end)}`}
+                  </span>
+                  <button onClick={() => removeBlock(b)} className="text-xs text-red-600 hover:underline">remove</button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-gray-400">Nothing blocked this day.</p>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center gap-4 mt-3 text-[0.7rem] text-gray-500">
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-red-600" /> blocked</span>

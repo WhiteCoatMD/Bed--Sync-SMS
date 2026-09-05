@@ -112,6 +112,17 @@ export default function AppointmentsPage() {
       .map((a) => new Date(a.scheduled_at).toLocaleDateString('en-CA', { timeZone: timezone }))
   );
 
+  /** Booked times per date, so the day panel can show what is already on. */
+  const appointmentsByDate: Record<string, { time: string; who: string }[]> = {};
+  for (const a of appointments) {
+    if (a.status !== 'scheduled' && a.status !== 'confirmed') continue;
+    const key = new Date(a.scheduled_at).toLocaleDateString('en-CA', { timeZone: timezone });
+    (appointmentsByDate[key] ||= []).push({
+      time: new Date(a.scheduled_at).toLocaleTimeString('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }),
+      who: a.lead?.customer_name || a.lead?.phone || '',
+    });
+  }
+
   async function saveAvailability(patch: { day_hours: Record<string, DayHours>; blackouts: Blackout[] }) {
     try {
       const res = await fetch('/api/dealers/settings', {
@@ -168,6 +179,7 @@ export default function AppointmentsPage() {
       initialDayHours={dayHours}
       initialBlackouts={blackouts}
       bookedDates={bookedDates}
+      appointmentsByDate={appointmentsByDate}
       onSave={saveAvailability}
     />
   ) : null;
