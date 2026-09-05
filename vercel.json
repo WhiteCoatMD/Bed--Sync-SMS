@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/provision-numbers",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/daily-appointments",
+      "schedule": "0 * * * *"
     }
   ]
 }
