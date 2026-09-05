@@ -249,7 +249,7 @@ export default function AvailabilityPanel({
         aria-expanded={showHours}
       >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-600/15 text-lg" aria-hidden>
-          \u23F0
+          &#9200;
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-ink-text">Weekly hours</span>
@@ -316,7 +316,7 @@ export default function AvailabilityPanel({
         aria-expanded={showTimeOff}
       >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-600/15 text-lg" aria-hidden>
-          \U0001F4C5
+          &#128197;
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-ink-text">Time off</span>
