@@ -132,6 +132,11 @@ export async function POST(req: NextRequest) {
       // this reports null rather than guessing.
       dealer_type: viewingAsAdmin ? null : (bedsyncUser.dealer_type || null),
       blackouts: (dealer.settings as { blackouts?: unknown } | null)?.blackouts || [],
+      // The availability editor needs the weekly schedule too, not just the
+      // exceptions to it.
+      day_hours: (dealer.settings as { day_hours?: unknown } | null)?.day_hours || null,
+      business_hours_start: (dealer.settings as { business_hours_start?: string } | null)?.business_hours_start || null,
+      business_hours_end: (dealer.settings as { business_hours_end?: string } | null)?.business_hours_end || null,
       appointment_only: (dealer.settings as { appointment_only?: boolean } | null)?.appointment_only === true,
     });
 

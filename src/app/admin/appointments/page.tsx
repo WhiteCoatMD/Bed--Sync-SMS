@@ -3,9 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { resolveAdminSession } from '@/lib/admin-session';
-import { zonedWallClockToUtcIso } from '@/lib/business-hours';
+import AvailabilityPanel, { type Blackout, type DayHours } from './AvailabilityPanel';
 
-interface Blackout { start: string; end: string; reason?: string }
 
 interface Appointment {
   id: string;
@@ -46,11 +45,7 @@ export default function AppointmentsPage() {
   // walk-in store just has nobody booked that day.
   const [dealerType, setDealerType] = useState<string | null>(null);
   const [blackouts, setBlackouts] = useState<Blackout[]>([]);
-  const [blockFrom, setBlockFrom] = useState('');
-  const [blockTo, setBlockTo] = useState('');
-  const [blockReason, setBlockReason] = useState('');
-  const [savingBlock, setSavingBlock] = useState(false);
-  const [blockError, setBlockError] = useState<string | null>(null);
+  const [dayHours, setDayHours] = useState<Record<string, DayHours> | null>(null);
   // Store timezone, so a dealer viewing from another zone (or a franchisor,
   // or a travelling owner) still sees the time the customer will arrive.
   const [timezone, setTimezone] = useState<string | undefined>(undefined);
@@ -73,6 +68,7 @@ export default function AppointmentsPage() {
         setDealerId(data.dealer_id);
         setDealerType(data.dealer_type || null);
         setBlackouts(Array.isArray(data.blackouts) ? data.blackouts : []);
+        setDayHours(data.day_hours || null);
       } else {
         setAuthError('Not authorized.');
         setLoading(false);
@@ -109,54 +105,28 @@ export default function AppointmentsPage() {
     setLoading(false);
   }
 
-  async function saveBlackouts(next: Blackout[]) {
-    setSavingBlock(true);
-    setBlockError(null);
+  /** Dates that already have an appointment, so the calendar can warn. */
+  const bookedDates = new Set(
+    appointments
+      .filter((a) => a.status === 'scheduled' || a.status === 'confirmed')
+      .map((a) => new Date(a.scheduled_at).toLocaleDateString('en-CA', { timeZone: timezone }))
+  );
+
+  async function saveAvailability(patch: { day_hours: Record<string, DayHours>; blackouts: Blackout[] }) {
     try {
       const res = await fetch('/api/dealers/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ dealer_id: dealerId, settings: { blackouts: next } }),
+        body: JSON.stringify({ dealer_id: dealerId, settings: patch }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Could not save');
-      setBlackouts(next);
+      if (!res.ok || !data.success) return false;
+      setBlackouts(patch.blackouts);
+      setDayHours(patch.day_hours);
       return true;
-    } catch (e) {
-      setBlockError((e as Error).message);
+    } catch {
       return false;
-    } finally {
-      setSavingBlock(false);
     }
-  }
-
-  async function addBlackout() {
-    setBlockError(null);
-    if (!blockFrom || !blockTo) { setBlockError('Pick a start and an end.'); return; }
-    // The pickers give store-local wall clock. Convert with the store's own
-    // timezone, the same way the agent converts a time it was given, so a
-    // block means the same instant to both.
-    const tz = timezone || 'America/Chicago';
-    const startIso = zonedWallClockToUtcIso(blockFrom.replace('T', ' ') + ':00', tz);
-    const endIso = zonedWallClockToUtcIso(blockTo.replace('T', ' ') + ':00', tz);
-    if (new Date(endIso) <= new Date(startIso)) { setBlockError('The end has to be after the start.'); return; }
-
-    const next = [...blackouts, { start: startIso, end: endIso, reason: blockReason.trim() || undefined }]
-      .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
-    if (await saveBlackouts(next)) {
-      setBlockFrom(''); setBlockTo(''); setBlockReason('');
-    }
-  }
-
-  async function removeBlackout(i: number) {
-    await saveBlackouts(blackouts.filter((_, n) => n !== i));
-  }
-
-  function fmtBlock(iso: string) {
-    return new Date(iso).toLocaleString('en-US', {
-      timeZone: timezone, weekday: 'short', month: 'short', day: 'numeric',
-      hour: 'numeric', minute: '2-digit',
-    });
   }
 
   async function updateStatus(id: string, status: string) {
@@ -189,68 +159,17 @@ export default function AppointmentsPage() {
     grouped[day].push(a);
   });
 
+  // The old panel asked for two datetime-local values to say "I am away next
+  // week". Replaced by an availability editor: weekly hours plus a month
+  // calendar you click. Same two settings underneath.
   const blockPanel = dealerType === 'mba' ? (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
-      <div className="flex items-baseline justify-between mb-1">
-        <h2 className="text-sm font-semibold text-gray-900">Block time off</h2>
-        <span className="text-xs text-gray-400">appointment-only stores</span>
-      </div>
-      <p className="text-xs text-gray-500 mb-3">
-        Times here are refused when a customer tries to book them, and the assistant
-        is told not to offer them in the first place. Your weekly hours still apply.
-      </p>
-
-      {blackouts.length > 0 && (
-        <ul className="mb-3 divide-y divide-gray-100 border border-gray-100 rounded-lg">
-          {blackouts.map((b, i) => (
-            <li key={b.start + i} className="flex items-center justify-between px-3 py-2">
-              <div className="text-sm text-gray-800">
-                {fmtBlock(b.start)} &rarr; {fmtBlock(b.end)}
-                {b.reason ? <span className="text-gray-500"> &middot; {b.reason}</span> : null}
-              </div>
-              <button
-                onClick={() => removeBlackout(i)}
-                disabled={savingBlock}
-                className="text-xs text-red-600 hover:underline disabled:opacity-50"
-              >
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="text-xs text-gray-600">
-          From
-          <input type="datetime-local" value={blockFrom} onChange={(e) => setBlockFrom(e.target.value)}
-            className="block mt-0.5 border border-gray-300 rounded-md px-2 py-1 text-sm" />
-        </label>
-        <label className="text-xs text-gray-600">
-          Until
-          <input type="datetime-local" value={blockTo} onChange={(e) => setBlockTo(e.target.value)}
-            className="block mt-0.5 border border-gray-300 rounded-md px-2 py-1 text-sm" />
-        </label>
-        <label className="text-xs text-gray-600 flex-1 min-w-[8rem]">
-          Reason (optional)
-          <input type="text" value={blockReason} onChange={(e) => setBlockReason(e.target.value)}
-            placeholder="Out of town" maxLength={60}
-            className="block mt-0.5 w-full border border-gray-300 rounded-md px-2 py-1 text-sm" />
-        </label>
-        <button
-          onClick={addBlackout}
-          disabled={savingBlock}
-          className="bg-brand-900 text-white text-sm font-medium px-3 py-1.5 rounded-md disabled:opacity-50"
-        >
-          {savingBlock ? 'Saving…' : 'Block it'}
-        </button>
-      </div>
-
-      {blockError && <p className="mt-2 text-xs text-red-600">{blockError}</p>}
-      {blackouts.length === 0 && !blockError && (
-        <p className="mt-2 text-xs text-gray-400">Nothing blocked. Bookings follow your weekly hours.</p>
-      )}
-    </div>
+    <AvailabilityPanel
+      timezone={timezone || 'America/Chicago'}
+      initialDayHours={dayHours}
+      initialBlackouts={blackouts}
+      bookedDates={bookedDates}
+      onSave={saveAvailability}
+    />
   ) : null;
 
   return (
