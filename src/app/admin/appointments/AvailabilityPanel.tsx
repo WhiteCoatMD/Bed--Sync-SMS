@@ -108,6 +108,12 @@ export default function AvailabilityPanel({
   const [fromTime, setFromTime] = useState('12:00');
   const [toTime, setToTime] = useState('14:00');
   const [dayErr, setDayErr] = useState<string | null>(null);
+  // Both collapsed by default. A dealer sets hours once and then mostly comes
+  // here to read the day's appointments, so the editors should not push the
+  // list off the screen. The summary lines mean neither has to be opened to
+  // see where things stand.
+  const [showHours, setShowHours] = useState(false);
+  const [showTimeOff, setShowTimeOff] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -186,6 +192,42 @@ export default function AvailabilityPanel({
     if (ok) setDirty(false);
   }
 
+  /** e.g. "Mon-Sat 11:00-19:00, Sun closed" or "Varies by day". */
+  function weeklySummary() {
+    const open: number[] = [];
+    const closed: number[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = dayHours[String(i)];
+      (d?.open ? open : closed).push(i);
+    }
+    if (open.length === 0) return 'Closed every day';
+    const first = dayHours[String(open[0])];
+    const uniform = open.every((i) => dayHours[String(i)].start === first.start
+      && dayHours[String(i)].end === first.end);
+    const openLabel = uniform
+      ? `${open.map((i) => DAY_NAMES[i].slice(0, 3)).join(', ')} ${first.start}-${first.end}`
+      : `${open.length} day${open.length === 1 ? '' : 's'} open, hours vary`;
+    return closed.length
+      ? `${openLabel} · closed ${closed.map((i) => DAY_NAMES[i].slice(0, 3)).join(', ')}`
+      : openLabel;
+  }
+
+  /** Only counts what is still ahead -- past blocks are noise. */
+  function timeOffSummary() {
+    const now = Date.now();
+    const upcoming = blackouts.filter((b) => new Date(b.end).getTime() > now);
+    if (upcoming.length === 0) return 'Nothing blocked';
+    const whole = upcoming.filter((b) => {
+      const d = new Date(b.start).toLocaleDateString('en-CA', { timeZone: timezone });
+      return coversWholeDay(b, d, timezone);
+    }).length;
+    const part = upcoming.length - whole;
+    const bits: string[] = [];
+    if (whole) bits.push(`${whole} day${whole === 1 ? '' : 's'}`);
+    if (part) bits.push(`${part} time${part === 1 ? '' : 's'}`);
+    return bits.join(' and ') + ' blocked';
+  }
+
   const today = ymd(new Date());
   const monthLabel = cursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
@@ -200,8 +242,17 @@ export default function AvailabilityPanel({
       </p>
 
       {/* ---------------- weekly hours ---------------- */}
-      <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Weekly hours</h3>
-      <div className="border border-gray-100 rounded-lg divide-y divide-gray-100 mb-5">
+      <button
+        onClick={() => setShowHours((v) => !v)}
+        className="w-full flex items-center justify-between py-2 border-t border-gray-100 text-left"
+      >
+        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Weekly hours</span>
+        <span className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">{weeklySummary()}</span>
+          <span className="text-gray-400 text-xs">{showHours ? '\u25B4' : '\u25BE'}</span>
+        </span>
+      </button>
+      <div className={`border border-gray-100 rounded-lg divide-y divide-gray-100 mb-5 ${showHours ? '' : 'hidden'}`}>
         {DAY_NAMES.map((name, i) => {
           const d = dayHours[String(i)];
           return (
@@ -251,8 +302,19 @@ export default function AvailabilityPanel({
       </div>
 
       {/* ---------------- time off ---------------- */}
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Time off</h3>
+      <button
+        onClick={() => setShowTimeOff((v) => !v)}
+        className="w-full flex items-center justify-between py-2 border-t border-gray-100 text-left"
+      >
+        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Time off</span>
+        <span className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">{timeOffSummary()}</span>
+          <span className="text-gray-400 text-xs">{showTimeOff ? '\u25B4' : '\u25BE'}</span>
+        </span>
+      </button>
+
+      <div className={showTimeOff ? '' : 'hidden'}>
+      <div className="flex items-center justify-end mb-2">
         <div className="flex items-center gap-2">
           <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
             className="px-2 py-0.5 text-gray-500 hover:bg-gray-100 rounded" aria-label="Previous month">&#8249;</button>
@@ -368,6 +430,8 @@ export default function AvailabilityPanel({
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-red-600" /> blocked</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-gray-100 border border-gray-200" /> closed weekly</span>
         <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-500" /> has a booking</span>
+      </div>
+
       </div>
 
       <div className="flex items-center gap-3 mt-4">
