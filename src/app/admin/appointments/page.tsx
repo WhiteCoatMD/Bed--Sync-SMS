@@ -19,6 +19,25 @@ interface Appointment {
   conversation: { id: string; status: string };
 }
 
+/**
+ * A manual booking with no number stores a non-numeric placeholder, which must
+ * never be offered as something to dial.
+ */
+function callable_(phone: string | null | undefined): boolean {
+  // Count digits anywhere, not seven in a row: a dealer types 386-555-0147 and
+  // that has four consecutive digits at most, which would have hidden their
+  // customer's number precisely when they wanted to ring it.
+  return !!phone && phone.replace(/\D/g, '').length >= 7;
+}
+
+/** +13865550147 -> (386) 555-0147 */
+function prettyPhone(phone: string): string {
+  const d = phone.replace(/\D/g, '');
+  const ten = d.length === 11 && d.startsWith('1') ? d.slice(1) : d;
+  if (ten.length !== 10) return phone;
+  return `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}`;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   scheduled: 'bg-blue-500/15 text-blue-300 border border-blue-500/30',
   confirmed: 'bg-green-500/15 text-green-300 border border-green-500/30',
@@ -372,6 +391,16 @@ export default function AppointmentsPage() {
                                 <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded">AI scheduled</span>
                               )}
                             </div>
+                            {callable_(a.lead.phone) && (
+                              <a
+                                href={`tel:${a.lead.phone}`}
+                                className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-brand-600 hover:underline"
+                                title="Call this customer"
+                              >
+                                <span aria-hidden>&#128222;</span>
+                                {prettyPhone(a.lead.phone)}
+                              </a>
+                            )}
                             <div className="text-xs text-ink-muted mt-0.5">
                               <span className="font-medium">{time}</span>
                               <span className="mx-1.5">·</span>

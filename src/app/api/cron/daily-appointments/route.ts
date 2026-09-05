@@ -17,6 +17,15 @@ import { sendSms } from '@/lib/sms';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Every dealer reminder sends from the shared toll-free, not the dealer's own
+ * line. That number's toll-free verification declares App Notifications going
+ * "exclusively to the dealer", which is exactly this traffic. A dealer's local
+ * number is registered under the 10DLC campaign for conversations with their
+ * CUSTOMERS -- a different program, and the wrong one to carry these.
+ */
+const DEALER_ALERT_FROM = (process.env.DEALER_ALERT_FROM || '+18335292631').replace(/[^\d+]/g, '');
+
 /** The dealer's local hour right now, e.g. 8. */
 function localHour(tz: string): number {
   return Number(
@@ -107,7 +116,7 @@ export async function GET(req: NextRequest) {
         `. Details in your dashboard. Reply STOP to opt out.`;
 
       try {
-        await sendSms(notify, body, (d.twilio_phone as string) || undefined);
+        await sendSms(notify, body, DEALER_ALERT_FROM);
         await db.from('dealers')
           .update({ settings: { ...s, last_daily_digest: today } })
           .eq('id', d.id);
