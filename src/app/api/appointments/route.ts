@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
     }
 
     const db = getServiceClient();
+
     let query = db
       .from('appointments')
       .select(`
@@ -69,6 +70,33 @@ export async function POST(req: NextRequest) {
     }
 
     const db = getServiceClient();
+
+    // Refuse a clash BEFORE creating anything. An appointment-only store sees
+    // one customer at a time, so a taken slot is a no -- and doing this check
+    // after the lead was made left an orphan customer and conversation behind
+    // on every refused booking.
+    const wanted = new Date(scheduled_at).getTime();
+    const mins = duration_minutes || (type === 'phone_call' ? 15 : 30);
+    const { data: nearby } = await db
+      .from('appointments')
+      .select('scheduled_at, duration_minutes')
+      .eq('dealer_id', dealer_id)
+      .in('status', ['scheduled', 'confirmed'])
+      .gte('scheduled_at', new Date(wanted - 12 * 3600000).toISOString())
+      .lte('scheduled_at', new Date(wanted + 12 * 3600000).toISOString());
+
+    const clash = (nearby || []).find((n) => {
+      const s = new Date(n.scheduled_at).getTime();
+      const e = s + ((n.duration_minutes ?? 30) * 60000);
+      return wanted < e && s < wanted + mins * 60000;
+    });
+    if (clash) {
+      return NextResponse.json(
+        { error: 'double_booked', conflict_at: clash.scheduled_at },
+        { status: 409 }
+      );
+    }
+
 
     // A walk-in the dealer books by hand has no conversation and no lead, but
     // both columns are NOT NULL, so make them. Doing it this way rather than
@@ -127,31 +155,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: convErr?.message || 'Could not create the booking' }, { status: 500 });
       }
       conversation_id = conv.id;
-    }
-
-    // Refuse a clash rather than quietly creating one -- an appointment-only
-    // store sees one customer at a time, which is the whole point of the guard
-    // the agent already obeys.
-    const wanted = new Date(scheduled_at).getTime();
-    const mins = duration_minutes || (type === 'phone_call' ? 15 : 30);
-    const { data: nearby } = await db
-      .from('appointments')
-      .select('scheduled_at, duration_minutes')
-      .eq('dealer_id', dealer_id)
-      .in('status', ['scheduled', 'confirmed'])
-      .gte('scheduled_at', new Date(wanted - 12 * 3600000).toISOString())
-      .lte('scheduled_at', new Date(wanted + 12 * 3600000).toISOString());
-
-    const clash = (nearby || []).find((n) => {
-      const s = new Date(n.scheduled_at).getTime();
-      const e = s + ((n.duration_minutes ?? 30) * 60000);
-      return wanted < e && s < wanted + mins * 60000;
-    });
-    if (clash) {
-      return NextResponse.json(
-        { error: 'double_booked', conflict_at: clash.scheduled_at },
-        { status: 409 }
-      );
     }
 
     const { data, error } = await db
