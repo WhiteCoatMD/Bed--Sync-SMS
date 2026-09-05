@@ -19,11 +19,11 @@ interface Appointment {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  scheduled: 'bg-blue-100 text-blue-800',
-  confirmed: 'bg-green-100 text-green-800',
-  completed: 'bg-gray-100 text-gray-600',
-  cancelled: 'bg-red-100 text-red-600',
-  no_show: 'bg-yellow-100 text-yellow-800',
+  scheduled: 'bg-blue-500/15 text-blue-300 border border-blue-500/30',
+  confirmed: 'bg-green-500/15 text-green-300 border border-green-500/30',
+  completed: 'bg-ink-card/5 text-ink-muted border border-ink-border',
+  cancelled: 'bg-red-500/15 text-red-300 border border-red-500/30',
+  no_show: 'bg-yellow-500/15 text-yellow-300 border border-yellow-500/30',
 };
 
 const TYPE_ICONS: Record<string, string> = {
@@ -154,7 +154,7 @@ export default function AppointmentsPage() {
   if (authError) {
     return (
       <div className="text-center py-20">
-        <p className="text-gray-500">{authError}</p>
+        <p className="text-ink-muted">{authError}</p>
         <a href="https://www.bed-sync.com/admin.html" className="mt-4 inline-block text-brand-900 underline">
           Go to Bed Sync Admin
         </a>
@@ -188,20 +188,20 @@ export default function AppointmentsPage() {
     <div className="max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Appointments</h1>
-          <p className="text-sm text-gray-500">Scheduled calls and showroom visits</p>
+          <h1 className="text-2xl font-bold text-ink-text">Appointments</h1>
+          <p className="text-sm text-ink-muted">Scheduled calls and showroom visits</p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex bg-gray-100 rounded-lg p-0.5">
+          <div className="flex bg-ink-hover rounded-lg p-0.5">
             <button
               onClick={() => setView('upcoming')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${view === 'upcoming' ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${view === 'upcoming' ? 'bg-ink-card shadow text-ink-text' : 'text-ink-muted'}`}
             >
               Upcoming
             </button>
             <button
               onClick={() => setView('past')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${view === 'past' ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${view === 'past' ? 'bg-ink-card shadow text-ink-text' : 'text-ink-muted'}`}
             >
               Past
             </button>
@@ -215,20 +215,20 @@ export default function AppointmentsPage() {
       {blockPanel}
 
       {loading ? (
-        <div className="text-center py-12 text-gray-400">Loading...</div>
+        <div className="text-center py-12 text-ink-faint">Loading...</div>
       ) : appointments.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-4xl mb-3">📅</div>
-          <p className="text-gray-400">
+          <p className="text-ink-faint">
             {view === 'upcoming' ? 'No upcoming appointments.' : 'No past appointments.'}
           </p>
-          <p className="text-xs text-gray-300 mt-1">Appointments are created when the AI schedules a call or visit with a customer.</p>
+          <p className="text-xs text-ink-faint mt-1">Appointments are created when the AI schedules a call or visit with a customer.</p>
         </div>
       ) : (
         <div className="space-y-6">
           {Object.entries(grouped).map(([day, appts]) => (
             <div key={day}>
-              <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">{day}</h2>
+              <h2 className="text-xs font-bold text-ink-faint uppercase tracking-wide mb-2">{day}</h2>
               <div className="space-y-2">
                 {appts.map((a) => {
                   const time = new Date(a.scheduled_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: timezone });
@@ -236,24 +236,24 @@ export default function AppointmentsPage() {
                   return (
                     <div
                       key={a.id}
-                      className={`bg-white rounded-xl border p-4 transition ${isActive ? 'border-gray-200 shadow-sm' : 'border-gray-100 opacity-75'}`}
+                      className={`bg-ink-card rounded-xl border p-4 transition ${isActive ? 'border-ink-border shadow-sm' : 'border-ink-border opacity-75'}`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <div className="text-2xl">{TYPE_ICONS[a.type] || '📋'}</div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="font-semibold text-sm text-gray-900">
+                              <span className="font-semibold text-sm text-ink-text">
                                 {a.lead.customer_name || a.lead.phone}
                               </span>
-                              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[a.status] || 'bg-gray-100'}`}>
+                              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[a.status] || 'bg-ink-hover'}`}>
                                 {a.status}
                               </span>
                               {a.created_by === 'agent' && (
                                 <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded">AI scheduled</span>
                               )}
                             </div>
-                            <div className="text-xs text-gray-500 mt-0.5">
+                            <div className="text-xs text-ink-muted mt-0.5">
                               <span className="font-medium">{time}</span>
                               <span className="mx-1.5">·</span>
                               <span>{a.type.replace('_', ' ')}</span>
@@ -262,7 +262,7 @@ export default function AppointmentsPage() {
                               {a.notes && (
                                 <>
                                   <span className="mx-1.5">·</span>
-                                  <span className="text-gray-400">{a.notes}</span>
+                                  <span className="text-ink-faint">{a.notes}</span>
                                 </>
                               )}
                             </div>
@@ -294,7 +294,7 @@ export default function AppointmentsPage() {
                               <button
                                 onClick={() => updateStatus(a.id, 'cancelled')}
                                 disabled={updating === a.id}
-                                className="text-xs px-2.5 py-1 bg-gray-200 text-gray-600 rounded-lg font-medium hover:bg-gray-300 disabled:opacity-50"
+                                className="text-xs px-2.5 py-1 bg-ink-hover text-ink-muted rounded-lg font-medium hover:bg-gray-300 disabled:opacity-50"
                               >
                                 Cancel
                               </button>

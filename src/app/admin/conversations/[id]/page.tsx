@@ -189,7 +189,7 @@ export default function ConversationDetailPage() {
     fetchDetail();
   }
 
-  if (loading) return <div className="text-center py-12 text-gray-400">Loading...</div>;
+  if (loading) return <div className="text-center py-12 text-ink-faint">Loading...</div>;
   if (!data) return <div className="text-center py-12 text-red-500">Conversation not found.</div>;
 
   const ctx = data.context;
@@ -221,7 +221,7 @@ export default function ConversationDetailPage() {
             ← Back
           </Link>
           <div className="h-5 w-px bg-gray-300" />
-          <h1 className="text-xl font-bold text-gray-900">
+          <h1 className="text-xl font-bold text-ink-text">
             {data.lead.customer_name || data.lead.phone}
           </h1>
 
@@ -230,7 +230,7 @@ export default function ConversationDetailPage() {
             className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${
               isHot ? 'bg-red-100 text-red-700 ring-2 ring-red-300' :
               isWarm ? 'bg-yellow-100 text-yellow-700' :
-              'bg-gray-100 text-gray-500'
+              'bg-ink-hover text-ink-muted'
             }`}
             title={`Lead Score: ${score}`}
           >
@@ -244,15 +244,15 @@ export default function ConversationDetailPage() {
           )}
 
           <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-            data.status === 'active' ? 'bg-green-100 text-green-800' :
+            data.status === 'active' ? 'bg-green-500/15 text-green-300 border border-green-500/30' :
             data.status === 'handed_off' ? 'bg-red-100 text-red-800' :
-            data.status === 'follow_up' ? 'bg-yellow-100 text-yellow-800' :
-            'bg-gray-100 text-gray-600'
+            data.status === 'follow_up' ? 'bg-yellow-500/15 text-yellow-300 border border-yellow-500/30' :
+            'bg-ink-card/5 text-ink-muted border border-ink-border'
           }`}>
             {data.status === 'handed_off' ? 'Needs You' : data.status.replace('_', ' ')}
           </span>
 
-          <span className="text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded">
+          <span className="text-xs text-ink-muted bg-ink-bg px-2 py-1 rounded">
             {STATE_LABELS[data.agent_state] || data.agent_state}
           </span>
         </div>
@@ -292,12 +292,12 @@ export default function ConversationDetailPage() {
       <div className="grid grid-cols-3 gap-4">
         {/* Messages - Main Column */}
         <div className="col-span-2">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="bg-ink-card rounded-xl shadow-sm border border-ink-border overflow-hidden">
             {/* Message Thread */}
-            <div className="h-[520px] overflow-y-auto p-4 space-y-3 bg-gray-50">
+            <div className="h-[520px] overflow-y-auto p-4 space-y-3 bg-ink-bg">
               {/* Conversation start marker */}
               <div className="text-center">
-                <span className="text-[10px] text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
+                <span className="text-[10px] text-ink-faint bg-ink-hover px-3 py-1 rounded-full">
                   Started {new Date(data.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
@@ -311,7 +311,7 @@ export default function ConversationDetailPage() {
                   <div key={m.id}>
                     {showDate && (
                       <div className="text-center my-2">
-                        <span className="text-[10px] text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
+                        <span className="text-[10px] text-ink-faint bg-ink-hover px-3 py-1 rounded-full">
                           {new Date(m.created_at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
                         </span>
                       </div>
@@ -323,13 +323,13 @@ export default function ConversationDetailPage() {
                             ? m.sender === 'human'
                               ? 'bg-orange-500 text-white'
                               : 'bg-brand-900 text-white'
-                            : 'bg-white border border-gray-200 text-gray-800 shadow-sm'
+                            : 'bg-ink-card border border-ink-border text-ink-text shadow-sm'
                         }`}
                       >
                         <div className="whitespace-pre-wrap">{m.body}</div>
                         <div
                           className={`text-[10px] mt-1 flex items-center gap-1 ${
-                            m.direction === 'outbound' ? 'text-white/50' : 'text-gray-400'
+                            m.direction === 'outbound' ? 'text-white/50' : 'text-ink-faint'
                           }`}
                         >
                           {m.sender === 'human' ? '👤 You' : m.sender === 'agent' ? '🤖 AI' : '💬 Customer'}
@@ -345,7 +345,7 @@ export default function ConversationDetailPage() {
             </div>
 
             {/* Manual Send */}
-            <div className="p-3 border-t border-gray-200 bg-white">
+            <div className="p-3 border-t border-ink-border bg-ink-card">
               <div className="flex gap-2">
                 <input
                   ref={inputRef}
@@ -354,7 +354,7 @@ export default function ConversationDetailPage() {
                   onChange={(e) => setManualMessage(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendManual()}
                   placeholder={data.status === 'handed_off' ? 'Type your reply...' : 'Send a manual message...'}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                  className="flex-1 px-4 py-2.5 border border-ink-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                 />
                 <button
                   onClick={handleSendManual}
@@ -364,7 +364,7 @@ export default function ConversationDetailPage() {
                   {sending ? '...' : 'Send'}
                 </button>
               </div>
-              <p className="text-[10px] text-gray-400 mt-1.5 ml-1">
+              <p className="text-[10px] text-ink-faint mt-1.5 ml-1">
                 {manualMessage.length}/160 characters
                 {manualMessage.length > 160 && <span className="text-orange-500 ml-1">(will be multi-segment)</span>}
               </p>
@@ -373,13 +373,13 @@ export default function ConversationDetailPage() {
 
           {/* Recommendations */}
           {data.recommendations.length > 0 && (
-            <details className="mt-4 bg-white rounded-xl shadow-sm border border-gray-200 p-4 group">
+            <details className="mt-4 bg-ink-card rounded-xl shadow-sm border border-ink-border p-4 group">
               {/* Collapsed by default: a long conversation can show a dozen
                   products, and that pushed everything else off the screen. */}
               <summary className="font-semibold text-sm cursor-pointer list-none flex items-center justify-between">
                 <span>🛏️ Products Shown ({data.recommendations.length})</span>
-                <span className="text-xs font-normal text-gray-400 group-open:hidden">show</span>
-                <span className="text-xs font-normal text-gray-400 hidden group-open:inline">hide</span>
+                <span className="text-xs font-normal text-ink-faint group-open:hidden">show</span>
+                <span className="text-xs font-normal text-ink-faint hidden group-open:inline">hide</span>
               </summary>
               <div className="space-y-2 mt-3">
                 {data.recommendations.map((r) => (
@@ -387,13 +387,13 @@ export default function ConversationDetailPage() {
                     <div>
                       <span className="font-bold text-brand-900">#{r.rank}</span>{' '}
                       <span className="font-medium">{r.item.brand} {r.item.model}</span>
-                      <span className="text-gray-500 ml-2">{r.item.size} · {r.item.firmness}</span>
+                      <span className="text-ink-muted ml-2">{r.item.size} · {r.item.firmness}</span>
                     </div>
                     <div className="text-right">
                       {r.item.sale_price ? (
                         <>
                           <span className="font-bold text-green-700">${r.item.sale_price}</span>
-                          <span className="text-gray-400 line-through ml-2 text-xs">${r.item.price}</span>
+                          <span className="text-ink-faint line-through ml-2 text-xs">${r.item.price}</span>
                           <span className="text-green-600 text-xs ml-1">
                             (-${r.item.price - r.item.sale_price})
                           </span>
@@ -412,7 +412,7 @@ export default function ConversationDetailPage() {
         {/* Right Sidebar */}
         <div className="space-y-4">
           {/* Lead Summary Card */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <div className="bg-ink-card rounded-xl shadow-sm border border-ink-border p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-sm">Customer</h3>
               <a
@@ -434,20 +434,20 @@ export default function ConversationDetailPage() {
           </div>
 
           {/* Qualification Progress */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <div className="bg-ink-card rounded-xl shadow-sm border border-ink-border p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-sm">Qualification</h3>
               <span className={`text-xs font-bold px-2 py-0.5 rounded ${
                 qualProgress >= 70 ? 'bg-green-100 text-green-700' :
                 qualProgress >= 40 ? 'bg-yellow-100 text-yellow-700' :
-                'bg-gray-100 text-gray-500'
+                'bg-ink-hover text-ink-muted'
               }`}>
                 {qualProgress}%
               </span>
             </div>
 
             {/* Progress bar */}
-            <div className="w-full bg-gray-100 rounded-full h-1.5 mb-3">
+            <div className="w-full bg-ink-hover rounded-full h-1.5 mb-3">
               <div
                 className={`h-1.5 rounded-full transition-all ${
                   qualProgress >= 70 ? 'bg-green-500' :
@@ -461,13 +461,13 @@ export default function ConversationDetailPage() {
             <div className="space-y-1.5">
               {qualFields.map((f) => (
                 <div key={f.key} className="flex items-center justify-between text-sm">
-                  <span className={f.value ? 'text-gray-700' : 'text-gray-300'}>{f.label}</span>
+                  <span className={f.value ? 'text-ink-muted' : 'text-ink-faint'}>{f.label}</span>
                   {f.value ? (
-                    <span className="font-medium text-gray-900 bg-brand-50 px-2 py-0.5 rounded text-xs">
+                    <span className="font-medium text-ink-text bg-brand-50 px-2 py-0.5 rounded text-xs">
                       {f.value.replace(/_/g, ' ')}
                     </span>
                   ) : (
-                    <span className="text-gray-300 text-xs">—</span>
+                    <span className="text-ink-faint text-xs">—</span>
                   )}
                 </div>
               ))}
@@ -475,23 +475,23 @@ export default function ConversationDetailPage() {
           </div>
 
           {/* Lead Score Breakdown */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <div className="bg-ink-card rounded-xl shadow-sm border border-ink-border p-4">
             <h3 className="font-semibold text-sm mb-3">Lead Score</h3>
             <div className="flex items-center gap-3 mb-3">
               <div
                 className={`w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold ${
                   isHot ? 'bg-red-100 text-red-700 ring-2 ring-red-200' :
                   isWarm ? 'bg-yellow-100 text-yellow-700' :
-                  'bg-gray-100 text-gray-500'
+                  'bg-ink-hover text-ink-muted'
                 }`}
               >
                 {score}
               </div>
               <div>
-                <div className={`text-sm font-semibold ${isHot ? 'text-red-700' : isWarm ? 'text-yellow-700' : 'text-gray-500'}`}>
+                <div className={`text-sm font-semibold ${isHot ? 'text-red-700' : isWarm ? 'text-yellow-700' : 'text-ink-muted'}`}>
                   {isHot ? '🔥 Hot — Ready to buy' : isWarm ? '🌡️ Warm — Engaged' : '❄️ Cold — Early stage'}
                 </div>
-                <div className="text-xs text-gray-400">
+                <div className="text-xs text-ink-faint">
                   {isHot ? 'Consider calling this customer directly' : isWarm ? 'Keep the conversation going' : 'Needs more qualification'}
                 </div>
               </div>
@@ -499,7 +499,7 @@ export default function ConversationDetailPage() {
           </div>
 
           {/* Outcome Tracking */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <div className="bg-ink-card rounded-xl shadow-sm border border-ink-border p-4">
             <h3 className="font-semibold text-sm mb-3">Outcome</h3>
             {data.outcome ? (
               <div>
@@ -508,20 +508,20 @@ export default function ConversationDetailPage() {
                   <span className="font-bold text-sm">{data.outcome === 'won' ? 'Won — Purchased!' : 'Lost'}</span>
                 </div>
                 {data.outcome_product && (
-                  <p className="text-xs text-gray-600 mb-1">Product: <span className="font-medium">{data.outcome_product}</span></p>
+                  <p className="text-xs text-ink-muted mb-1">Product: <span className="font-medium">{data.outcome_product}</span></p>
                 )}
                 {data.outcome_details && (
-                  <p className="text-xs text-gray-500 mb-2">{data.outcome_details}</p>
+                  <p className="text-xs text-ink-muted mb-2">{data.outcome_details}</p>
                 )}
                 {data.outcome_at && (
-                  <p className="text-[10px] text-gray-400 mb-2">
+                  <p className="text-[10px] text-ink-faint mb-2">
                     {new Date(data.outcome_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                   </p>
                 )}
                 <button
                   onClick={handleClearOutcome}
                   disabled={savingOutcome}
-                  className="text-xs text-gray-400 hover:text-gray-600 underline"
+                  className="text-xs text-ink-faint hover:text-ink-muted underline"
                 >
                   Clear outcome
                 </button>
@@ -533,14 +533,14 @@ export default function ConversationDetailPage() {
                   value={outcomeProduct}
                   onChange={(e) => setOutcomeProduct(e.target.value)}
                   placeholder="What did they buy? (optional)"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs"
+                  className="w-full border border-ink-border rounded-lg px-3 py-1.5 text-xs"
                 />
                 <input
                   type="text"
                   value={outcomeDetails}
                   onChange={(e) => setOutcomeDetails(e.target.value)}
                   placeholder="Notes (optional)"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs"
+                  className="w-full border border-ink-border rounded-lg px-3 py-1.5 text-xs"
                 />
                 <div className="flex gap-2">
                   <button
@@ -564,26 +564,26 @@ export default function ConversationDetailPage() {
 
           {/* Agent Log (collapsible) */}
           {data.logs.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-ink-card rounded-xl shadow-sm border border-ink-border overflow-hidden">
               <button
                 onClick={() => setShowLogs(!showLogs)}
-                className="w-full p-4 flex items-center justify-between text-sm font-semibold hover:bg-gray-50 transition"
+                className="w-full p-4 flex items-center justify-between text-sm font-semibold hover:bg-ink-bg transition"
               >
                 <span>Agent Log ({data.logs.length})</span>
-                <span className="text-gray-400">{showLogs ? '▼' : '▶'}</span>
+                <span className="text-ink-faint">{showLogs ? '▼' : '▶'}</span>
               </button>
               {showLogs && (
-                <div className="px-4 pb-4 space-y-2 max-h-60 overflow-y-auto border-t border-gray-100">
+                <div className="px-4 pb-4 space-y-2 max-h-60 overflow-y-auto border-t border-ink-border">
                   {data.logs.slice(0, 20).map((log) => (
                     <div key={log.id} className="text-xs border-b border-gray-50 pb-1.5">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-brand-900">{log.action.replace(/_/g, ' ')}</span>
-                        <span className="text-gray-300">
+                        <span className="text-ink-faint">
                           {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
                       {log.details && Object.keys(log.details).length > 0 && (
-                        <div className="text-gray-400 mt-0.5 truncate">
+                        <div className="text-ink-faint mt-0.5 truncate">
                           {JSON.stringify(log.details).slice(0, 120)}
                         </div>
                       )}
@@ -609,8 +609,8 @@ function InfoRow({
   if (!value) return null;
   return (
     <div className="flex justify-between">
-      <dt className="text-gray-500">{label}</dt>
-      <dd className="font-medium text-gray-900">{value}</dd>
+      <dt className="text-ink-muted">{label}</dt>
+      <dd className="font-medium text-ink-text">{value}</dd>
     </div>
   );
 }

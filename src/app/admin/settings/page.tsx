@@ -183,7 +183,7 @@ export default function SettingsPage() {
   if (authError) {
     return (
       <div className="text-center py-20">
-        <p className="text-gray-500">{authError}</p>
+        <p className="text-ink-muted">{authError}</p>
         <a href="https://www.bed-sync.com/admin.html" className="mt-4 inline-block text-brand-900 underline">
           Go to Bed Sync Admin
         </a>
@@ -191,12 +191,12 @@ export default function SettingsPage() {
     );
   }
 
-  if (loading) return <div className="text-center py-12 text-gray-400">Loading...</div>;
+  if (loading) return <div className="text-center py-12 text-ink-faint">Loading...</div>;
 
   return (
     <div className="max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">SMS Agent Settings</h1>
+        <h1 className="text-2xl font-bold text-ink-text">SMS Agent Settings</h1>
         <Link href="/admin" className="text-sm text-brand-900 hover:underline">
           Back to Conversations
         </Link>
@@ -205,7 +205,7 @@ export default function SettingsPage() {
       {dealer && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
           <div className="font-semibold">{dealer.business_name}</div>
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-ink-muted">
             {dealer.twilio_phone || 'No phone assigned'} | {dealer.plan} plan |{' '}
             {usage
               ? `${usage.conversations_used}/${usage.conversations_included} conversations used this month`
@@ -220,11 +220,11 @@ export default function SettingsPage() {
           <Toggle label="Auto-reply to incoming messages" value={autoReply} onChange={setAutoReply} />
           <Toggle label="Share pricing in conversations" value={showPricing} onChange={setShowPricing} />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Greeting Style</label>
+            <label className="block text-sm font-medium text-ink-muted mb-1">Greeting Style</label>
             <select
               value={greetingStyle}
               onChange={(e) => setGreetingStyle(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              className="w-full border border-ink-border rounded-lg px-3 py-2 text-sm"
             >
               <option value="friendly">Friendly</option>
               <option value="professional">Professional</option>
@@ -238,11 +238,11 @@ export default function SettingsPage() {
           <Toggle label="Enable automatic follow-ups" value={followUpEnabled} onChange={setFollowUpEnabled} />
           {followUpEnabled && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Max follow-up messages</label>
+              <label className="block text-sm font-medium text-ink-muted mb-1">Max follow-up messages</label>
               <select
                 value={maxFollowUps}
                 onChange={(e) => setMaxFollowUps(parseInt(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                className="w-full border border-ink-border rounded-lg px-3 py-2 text-sm"
               >
                 <option value={1}>1</option>
                 <option value={2}>2</option>
@@ -263,18 +263,18 @@ export default function SettingsPage() {
 
         {/* Promotions */}
         <Section title="Current Specials & Promotions">
-          <p className="text-sm text-gray-600 -mt-2 mb-3">
+          <p className="text-sm text-ink-muted -mt-2 mb-3">
             Add your active sales and specials. The AI will mention them naturally when relevant. Remove old promos when they expire.
           </p>
           {promos.map((promo, idx) => (
-            <div key={idx} className="bg-gray-50 rounded-lg p-3 mb-3 border border-gray-200">
+            <div key={idx} className="bg-ink-bg rounded-lg p-3 mb-3 border border-ink-border">
               <div className="flex items-start gap-2 mb-2">
                 <textarea
                   value={promo.text}
                   onChange={(e) => { const p = [...promos]; p[idx] = { ...p[idx], text: e.target.value }; setPromos(p); }}
                   placeholder="e.g., 20% off all hybrids — showroom only"
                   rows={2}
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none"
+                  className="flex-1 border border-ink-border rounded-lg px-3 py-2 text-sm resize-none"
                 />
                 <button
                   type="button"
@@ -285,21 +285,21 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-1.5">
-                  <label className="text-xs text-gray-500">Starts</label>
+                  <label className="text-xs text-ink-muted">Starts</label>
                   <input
                     type="date"
                     value={promo.starts}
                     onChange={(e) => { const p = [...promos]; p[idx] = { ...p[idx], starts: e.target.value }; setPromos(p); }}
-                    className="border border-gray-300 rounded px-2 py-1 text-sm"
+                    className="border border-ink-border rounded px-2 py-1 text-sm"
                   />
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <label className="text-xs text-gray-500">Ends</label>
+                  <label className="text-xs text-ink-muted">Ends</label>
                   <input
                     type="date"
                     value={promo.ends}
                     onChange={(e) => { const p = [...promos]; p[idx] = { ...p[idx], ends: e.target.value }; setPromos(p); }}
-                    className="border border-gray-300 rounded px-2 py-1 text-sm"
+                    className="border border-ink-border rounded px-2 py-1 text-sm"
                   />
                 </div>
                 <label className="flex items-center gap-1.5 cursor-pointer">
@@ -309,7 +309,7 @@ export default function SettingsPage() {
                     onChange={(e) => { const p = [...promos]; p[idx] = { ...p[idx], inStoreOnly: e.target.checked }; setPromos(p); }}
                     className="w-4 h-4"
                   />
-                  <span className="text-xs text-gray-600">In-store only</span>
+                  <span className="text-xs text-ink-muted">In-store only</span>
                 </label>
               </div>
             </div>
@@ -325,7 +325,7 @@ export default function SettingsPage() {
 
         {/* Business Hours */}
         <Section title="Business Hours">
-          <p className="text-xs text-gray-500 -mt-2 mb-2">The AI will only auto-reply during open hours. Toggle days closed for days your store is not open.</p>
+          <p className="text-xs text-ink-muted -mt-2 mb-2">The AI will only auto-reply during open hours. Toggle days closed for days your store is not open.</p>
           <div className="space-y-2">
             {DAY_NAMES.map((name, idx) => {
               const key = String(idx);
@@ -337,27 +337,27 @@ export default function SettingsPage() {
                     onClick={() => setDayHours(prev => ({ ...prev, [key]: { ...day, open: !day.open } }))}
                     className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${day.open ? 'bg-brand-900' : 'bg-gray-300'}`}
                   >
-                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${day.open ? 'translate-x-5' : ''}`} />
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-ink-card rounded-full shadow transition-transform ${day.open ? 'translate-x-5' : ''}`} />
                   </button>
-                  <span className={`text-sm w-24 ${day.open ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>{name}</span>
+                  <span className={`text-sm w-24 ${day.open ? 'text-ink-muted font-medium' : 'text-ink-faint'}`}>{name}</span>
                   {day.open ? (
                     <div className="flex items-center gap-2">
                       <input
                         type="time"
                         value={day.start}
                         onChange={(e) => setDayHours(prev => ({ ...prev, [key]: { ...day, start: e.target.value } }))}
-                        className="border border-gray-300 rounded px-2 py-1 text-sm"
+                        className="border border-ink-border rounded px-2 py-1 text-sm"
                       />
-                      <span className="text-gray-400 text-sm">to</span>
+                      <span className="text-ink-faint text-sm">to</span>
                       <input
                         type="time"
                         value={day.end}
                         onChange={(e) => setDayHours(prev => ({ ...prev, [key]: { ...day, end: e.target.value } }))}
-                        className="border border-gray-300 rounded px-2 py-1 text-sm"
+                        className="border border-ink-border rounded px-2 py-1 text-sm"
                       />
                     </div>
                   ) : (
-                    <span className="text-sm text-gray-400 italic">Closed</span>
+                    <span className="text-sm text-ink-faint italic">Closed</span>
                   )}
                 </div>
               );
@@ -367,7 +367,7 @@ export default function SettingsPage() {
 
         {/* Inventory */}
         <Section title="Inventory">
-          <p className="text-sm text-gray-600 mb-3">
+          <p className="text-sm text-ink-muted mb-3">
             Sync your Bed Sync inventory so the AI can recommend real products with accurate pricing.
           </p>
           <button
@@ -402,8 +402,8 @@ export default function SettingsPage() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">{title}</h2>
+    <div className="bg-ink-card rounded-xl border border-ink-border p-5">
+      <h2 className="text-lg font-semibold text-ink-text mb-4">{title}</h2>
       <div className="space-y-4">{children}</div>
     </div>
   );
@@ -412,14 +412,14 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
     <label className="flex items-center justify-between cursor-pointer">
-      <span className="text-sm text-gray-700">{label}</span>
+      <span className="text-sm text-ink-muted">{label}</span>
       <button
         type="button"
         onClick={() => onChange(!value)}
         className={`relative w-11 h-6 rounded-full transition-colors ${value ? 'bg-brand-900' : 'bg-gray-300'}`}
       >
         <span
-          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-ink-card rounded-full shadow transition-transform ${
             value ? 'translate-x-5' : ''
           }`}
         />
@@ -441,13 +441,13 @@ function Input({
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className="block text-sm font-medium text-ink-muted mb-1">{label}</label>
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+        className="w-full border border-ink-border rounded-lg px-3 py-2 text-sm"
       />
     </div>
   );

@@ -1,3 +1,18 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Bed Sync dealer-admin palette, so this dashboard is recognisably the same
+   product a dealer just clicked out of. Mirrors admin-styles.css. */
+html, body {
+  background-color: #000000;
+  color: #f1f5f9;
+}
+
+/* Native pickers default to a light widget on a dark field, which looks
+   broken and is hard to read. */
+input[type="time"],
+input[type="date"],
+input[type="datetime-local"] {
+  color-scheme: dark;
+}

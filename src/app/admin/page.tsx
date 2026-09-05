@@ -29,11 +29,11 @@ interface ConversationRow {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-green-100 text-green-800',
-  follow_up: 'bg-yellow-100 text-yellow-800',
+  active: 'bg-green-500/15 text-green-300 border border-green-500/30',
+  follow_up: 'bg-yellow-500/15 text-yellow-300 border border-yellow-500/30',
   handed_off: 'bg-red-100 text-red-800',
-  closed: 'bg-gray-100 text-gray-600',
-  paused: 'bg-blue-100 text-blue-800',
+  closed: 'bg-ink-card/5 text-ink-muted border border-ink-border',
+  paused: 'bg-blue-500/15 text-blue-300 border border-blue-500/30',
 };
 
 const STATE_LABELS: Record<string, string> = {
@@ -186,8 +186,8 @@ export default function AdminDashboard() {
     return (
       <div className="text-center py-20">
         <div className="text-6xl mb-4">🔒</div>
-        <h1 className="text-xl font-bold text-gray-900 mb-2">Access Required</h1>
-        <p className="text-gray-500 max-w-md mx-auto">{authError}</p>
+        <h1 className="text-xl font-bold text-ink-text mb-2">Access Required</h1>
+        <p className="text-ink-muted max-w-md mx-auto">{authError}</p>
         <a
           href="https://www.bed-sync.com/admin.html"
           className="inline-block mt-6 px-6 py-2 bg-brand-900 text-white rounded-lg hover:bg-brand-700 transition"
@@ -217,18 +217,18 @@ export default function AdminDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Conversations</h1>
-          {businessName && <p className="text-sm text-gray-500">{businessName}</p>}
+          <h1 className="text-2xl font-bold text-ink-text">Conversations</h1>
+          {businessName && <p className="text-sm text-ink-muted">{businessName}</p>}
           {usage && usage.conversations_included > 0 && (() => {
             const pct = Math.min(100, Math.round((usage.conversations_used / usage.conversations_included) * 100));
             const spent = !usage.accepting_new;
             const low = !spent && pct >= 80;
             const barColor = spent ? "bg-red-500" : low ? "bg-amber-500" : "bg-brand-500";
-            const textColor = spent ? "text-red-700" : low ? "text-amber-700" : "text-gray-500";
+            const textColor = spent ? "text-red-700" : low ? "text-amber-700" : "text-ink-muted";
             return (
               <div className="mt-1.5 max-w-xs">
                 <div className="flex items-center gap-2">
-                  <div className="h-1.5 flex-1 rounded-full bg-gray-200 overflow-hidden">
+                  <div className="h-1.5 flex-1 rounded-full bg-ink-hover overflow-hidden">
                     <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
                   </div>
                   <span className={`text-xs whitespace-nowrap ${textColor}`}>
@@ -258,9 +258,9 @@ export default function AdminDashboard() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search name or phone..."
-              className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-56"
+              className="pl-9 pr-4 py-2 border border-ink-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-56"
             />
-            <svg className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="absolute left-3 top-2.5 h-4 w-4 text-ink-faint" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
@@ -268,7 +268,7 @@ export default function AdminDashboard() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as 'updated' | 'score' | 'messages')}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="px-3 py-2 border border-ink-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="updated">Recent Activity</option>
             <option value="score">Highest Score</option>
@@ -296,10 +296,10 @@ export default function AdminDashboard() {
                     {c.lead.lead_score}
                   </div>
                   <div className="min-w-0">
-                    <div className="font-semibold text-gray-900 text-sm truncate">
+                    <div className="font-semibold text-ink-text text-sm truncate">
                       {c.lead.customer_name || c.lead.phone}
                     </div>
-                    <div className="text-xs text-gray-500 flex items-center gap-2">
+                    <div className="text-xs text-ink-muted flex items-center gap-2">
                       {c.lead.customer_name && <span>{c.lead.phone}</span>}
                       {c.handed_off_reason && (
                         <>
@@ -313,7 +313,7 @@ export default function AdminDashboard() {
                 <div className="flex items-center gap-2 shrink-0">
                   <Link
                     href={`/admin/conversations/${c.id}`}
-                    className="text-xs px-3 py-1.5 bg-white border border-red-300 text-red-700 rounded-lg font-medium hover:bg-red-50 transition"
+                    className="text-xs px-3 py-1.5 bg-ink-card border border-red-300 text-red-700 rounded-lg font-medium hover:bg-red-50 transition"
                   >
                     View
                   </Link>
@@ -343,7 +343,7 @@ export default function AdminDashboard() {
 
       {/* Status Filters */}
       <div className="flex items-center gap-2 mb-4">
-        <span className="text-xs text-gray-500 font-medium">Filter:</span>
+        <span className="text-xs text-ink-muted font-medium">Filter:</span>
         {[
           { key: '', label: 'All', count: allCounts.all },
           { key: 'active', label: 'Active', count: allCounts.active },
@@ -357,7 +357,7 @@ export default function AdminDashboard() {
             className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
               filter === s.key
                 ? 'bg-brand-900 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'bg-ink-card/5 text-ink-muted border border-ink-border hover:bg-ink-hover'
             }`}
           >
             {s.label} ({s.count})
@@ -367,11 +367,11 @@ export default function AdminDashboard() {
 
       {/* Conversation List */}
       {loading ? (
-        <div className="text-center py-12 text-gray-400">Loading...</div>
+        <div className="text-center py-12 text-ink-faint">Loading...</div>
       ) : conversations.length === 0 ? (
         <div className="text-center py-12">
           <div className="text-4xl mb-3">📱</div>
-          <p className="text-gray-400">
+          <p className="text-ink-faint">
             {searchQuery ? 'No conversations match your search.' : 'No conversations yet. Send a test lead to get started.'}
           </p>
         </div>
@@ -381,7 +381,7 @@ export default function AdminDashboard() {
             <Link
               key={c.id}
               href={`/admin/conversations/${c.id}`}
-              className="block bg-white rounded-xl border border-gray-200 hover:border-brand-300 hover:shadow-md transition-all p-4"
+              className="block bg-ink-card rounded-xl border border-ink-border hover:border-brand-300 hover:shadow-md transition-all p-4"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -392,7 +392,7 @@ export default function AdminDashboard() {
                         ? 'bg-red-100 text-red-700 ring-2 ring-red-300'
                         : c.lead.lead_score >= 40
                         ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-gray-100 text-gray-500'
+                        : 'bg-ink-hover text-ink-muted'
                     }`}
                   >
                     {c.lead.lead_score}
@@ -401,7 +401,7 @@ export default function AdminDashboard() {
                   {/* Customer Info */}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-gray-900 truncate">
+                      <span className="font-semibold text-ink-text truncate">
                         {c.lead.customer_name || 'Unknown'}
                       </span>
                       {c.lead.lead_score >= 70 && (
@@ -418,7 +418,7 @@ export default function AdminDashboard() {
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+                    <div className="text-xs text-ink-muted flex items-center gap-2 mt-0.5">
                       <span className={c.lead.phone_invalid ? 'line-through' : undefined}>{c.lead.phone}</span>
                       <span>·</span>
                       <span>{c.message_count} msgs</span>
@@ -431,31 +431,31 @@ export default function AdminDashboard() {
                 {/* Right side: status + stage + time */}
                 <div className="flex items-center gap-3 shrink-0">
                   {/* Qualification preview */}
-                  <div className="hidden md:flex items-center gap-1.5 text-xs text-gray-400">
+                  <div className="hidden md:flex items-center gap-1.5 text-xs text-ink-faint">
                     {getQualTag(c.lead.qualification, 'mattress_size')}
                     {getQualTag(c.lead.qualification, 'budget_max', true)}
                     {getQualTag(c.lead.qualification, 'firmness')}
                   </div>
 
                   {/* Stage */}
-                  <span className="text-xs bg-gray-50 px-2 py-1 rounded text-gray-600 whitespace-nowrap">
+                  <span className="text-xs bg-ink-bg px-2 py-1 rounded text-ink-muted whitespace-nowrap">
                     {STATE_ICONS[c.agent_state] || ''} {STATE_LABELS[c.agent_state] || c.agent_state}
                   </span>
 
                   {/* Status badge */}
                   <span
                     className={`text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap ${
-                      STATUS_COLORS[c.status] || 'bg-gray-100'
+                      STATUS_COLORS[c.status] || 'bg-ink-hover'
                     }`}
                   >
                     {c.status === 'handed_off' ? 'Needs You' : c.status.replace('_', ' ')}
                   </span>
 
                   {/* Time */}
-                  <span className="text-xs text-gray-400 w-14 text-right">{timeAgo(c.updated_at)}</span>
+                  <span className="text-xs text-ink-faint w-14 text-right">{timeAgo(c.updated_at)}</span>
 
                   {/* Arrow */}
-                  <svg className="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-4 w-4 text-ink-faint" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
@@ -467,7 +467,7 @@ export default function AdminDashboard() {
 
       {/* Results count */}
       {!loading && conversations.length > 0 && (
-        <p className="text-xs text-gray-400 mt-4 text-center">
+        <p className="text-xs text-ink-faint mt-4 text-center">
           Showing {conversations.length} of {allCounts.all} conversations
         </p>
       )}
@@ -487,12 +487,12 @@ function StatCard({
   icon: string;
 }) {
   return (
-    <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+    <div className="bg-ink-card rounded-lg p-4 border border-ink-border shadow-sm">
       <div className="flex items-center justify-between mb-1">
         <span className="text-lg">{icon}</span>
         <span className={`text-2xl font-bold ${color}`}>{value}</span>
       </div>
-      <div className="text-xs text-gray-500">{label}</div>
+      <div className="text-xs text-ink-muted">{label}</div>
     </div>
   );
 }
@@ -501,7 +501,7 @@ function getQualTag(qual: Record<string, unknown>, key: string, isBudget = false
   const val = qual?.[key];
   if (!val) return null;
   const display = isBudget ? `$${String(val)}` : String(val).replace(/_/g, ' ');
-  return <span className="bg-gray-100 px-2 py-0.5 rounded">{display}</span>;
+  return <span className="bg-ink-hover px-2 py-0.5 rounded">{display}</span>;
 }
 
 function timeAgo(dateStr: string): string {

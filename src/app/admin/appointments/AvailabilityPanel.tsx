@@ -232,27 +232,35 @@ export default function AvailabilityPanel({
   const monthLabel = cursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+    <div className="bg-ink-card border border-ink-border rounded-xl p-4 mb-6">
       <div className="flex items-baseline justify-between mb-1">
-        <h2 className="text-sm font-semibold text-gray-900">Your availability</h2>
-        <span className="text-xs text-gray-400">times shown in your store&apos;s timezone</span>
+        <h2 className="text-sm font-semibold text-ink-text">Your availability</h2>
+        <span className="text-xs text-ink-faint">times shown in your store&apos;s timezone</span>
       </div>
-      <p className="text-xs text-gray-500 mb-4">
-        Your assistant will only book inside these hours, and never on a day you have blocked.
+      <p className="text-xs text-ink-muted mb-4">
+        Your assistant only books inside your hours, never on time you have blocked, and
+        never two customers at once.
       </p>
 
       {/* ---------------- weekly hours ---------------- */}
       <button
         onClick={() => setShowHours((v) => !v)}
-        className="w-full flex items-center justify-between py-2 border-t border-gray-100 text-left"
+        className="w-full flex items-center gap-3 px-3 py-3 mb-2 rounded-lg border border-ink-border bg-ink-hover hover:border-brand-600 transition text-left"
+        aria-expanded={showHours}
       >
-        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Weekly hours</span>
-        <span className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">{weeklySummary()}</span>
-          <span className="text-gray-400 text-xs">{showHours ? '\u25B4' : '\u25BE'}</span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-600/15 text-lg" aria-hidden>
+          \u23F0
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-ink-text">Weekly hours</span>
+          <span className="block text-xs text-ink-muted truncate">{weeklySummary()}</span>
+        </span>
+        <span className="flex items-center gap-1.5 shrink-0 rounded-full bg-brand-600 px-3 py-1 text-xs font-semibold text-white">
+          {showHours ? 'Done' : 'Edit'}
+          <span aria-hidden>{showHours ? '\u25B4' : '\u25BE'}</span>
         </span>
       </button>
-      <div className={`border border-gray-100 rounded-lg divide-y divide-gray-100 mb-5 ${showHours ? '' : 'hidden'}`}>
+      <div className={`border border-ink-border rounded-lg divide-y divide-ink-border mb-5 ${showHours ? '' : 'hidden'}`}>
         {DAY_NAMES.map((name, i) => {
           const d = dayHours[String(i)];
           return (
@@ -264,7 +272,7 @@ export default function AvailabilityPanel({
                   onChange={(e) => setDay(i, { open: e.target.checked })}
                   className="h-4 w-4"
                 />
-                <span className={`text-sm ${d.open ? 'text-gray-900' : 'text-gray-400'}`}>{name}</span>
+                <span className={`text-sm ${d.open ? 'text-ink-text' : 'text-ink-faint'}`}>{name}</span>
               </label>
 
               {d.open ? (
@@ -273,18 +281,18 @@ export default function AvailabilityPanel({
                     type="time"
                     value={d.start}
                     onChange={(e) => setDay(i, { start: e.target.value })}
-                    className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                    className="border border-ink-border rounded-md px-2 py-1 text-sm"
                   />
-                  <span className="text-gray-400 text-sm">to</span>
+                  <span className="text-ink-faint text-sm">to</span>
                   <input
                     type="time"
                     value={d.end}
                     onChange={(e) => setDay(i, { end: e.target.value })}
-                    className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                    className="border border-ink-border rounded-md px-2 py-1 text-sm"
                   />
                 </div>
               ) : (
-                <span className="text-sm text-gray-400">Closed</span>
+                <span className="text-sm text-ink-faint">Closed</span>
               )}
 
               {i === 1 && d.open && (
@@ -304,12 +312,19 @@ export default function AvailabilityPanel({
       {/* ---------------- time off ---------------- */}
       <button
         onClick={() => setShowTimeOff((v) => !v)}
-        className="w-full flex items-center justify-between py-2 border-t border-gray-100 text-left"
+        className="w-full flex items-center gap-3 px-3 py-3 mb-2 rounded-lg border border-ink-border bg-ink-hover hover:border-brand-600 transition text-left"
+        aria-expanded={showTimeOff}
       >
-        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Time off</span>
-        <span className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">{timeOffSummary()}</span>
-          <span className="text-gray-400 text-xs">{showTimeOff ? '\u25B4' : '\u25BE'}</span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-600/15 text-lg" aria-hidden>
+          \U0001F4C5
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-ink-text">Time off</span>
+          <span className="block text-xs text-ink-muted truncate">{timeOffSummary()}</span>
+        </span>
+        <span className="flex items-center gap-1.5 shrink-0 rounded-full bg-brand-600 px-3 py-1 text-xs font-semibold text-white">
+          {showTimeOff ? 'Done' : 'Edit'}
+          <span aria-hidden>{showTimeOff ? '\u25B4' : '\u25BE'}</span>
         </span>
       </button>
 
@@ -317,17 +332,17 @@ export default function AvailabilityPanel({
       <div className="flex items-center justify-end mb-2">
         <div className="flex items-center gap-2">
           <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
-            className="px-2 py-0.5 text-gray-500 hover:bg-gray-100 rounded" aria-label="Previous month">&#8249;</button>
-          <span className="text-sm font-medium text-gray-800 w-36 text-center">{monthLabel}</span>
+            className="px-2 py-0.5 text-ink-muted hover:bg-ink-hover rounded" aria-label="Previous month">&#8249;</button>
+          <span className="text-sm font-medium text-ink-text w-36 text-center">{monthLabel}</span>
           <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
-            className="px-2 py-0.5 text-gray-500 hover:bg-gray-100 rounded" aria-label="Next month">&#8250;</button>
+            className="px-2 py-0.5 text-ink-muted hover:bg-ink-hover rounded" aria-label="Next month">&#8250;</button>
         </div>
       </div>
-      <p className="text-xs text-gray-500 mb-2">Click a day to block the whole day, or just the hours you are busy.</p>
+      <p className="text-xs text-ink-muted mb-2">Click a day to block the whole day, or just the hours you are busy.</p>
 
       <div className="grid grid-cols-7 gap-1 mb-1">
         {DAY_SHORT.map((d, i) => (
-          <div key={i} className="text-center text-[0.65rem] font-medium text-gray-400 py-1">{d}</div>
+          <div key={i} className="text-center text-[0.65rem] font-medium text-ink-faint py-1">{d}</div>
         ))}
       </div>
       <div className="grid grid-cols-7 gap-1">
@@ -352,10 +367,10 @@ export default function AvailabilityPanel({
               className={[
                 'relative aspect-square rounded-md text-sm transition',
                 selected === key ? 'ring-2 ring-brand-900 ring-offset-1' : '',
-                isPast ? 'text-gray-300 cursor-default'
-                  : isBlocked ? 'bg-red-600 text-white font-semibold'
-                  : weeklyClosed ? 'bg-gray-100 text-gray-400'
-                  : 'bg-white text-gray-800 hover:bg-gray-100 border border-gray-200',
+                isPast ? 'text-ink-faint cursor-default'
+                  : isBlocked ? 'bg-brand-600 text-white font-semibold'
+                  : weeklyClosed ? 'bg-white/5 text-ink-faint'
+                  : 'bg-ink-hover text-ink-text border border-ink-border hover:border-brand-600',
               ].join(' ')}
             >
               {d.getDate()}
@@ -368,13 +383,13 @@ export default function AvailabilityPanel({
       </div>
 
       {selected && (
-        <div className="mt-3 border border-gray-200 rounded-lg p-3 bg-gray-50">
+        <div className="mt-3 border border-ink-border rounded-lg p-3 bg-ink-bg">
           <div className="flex items-center justify-between mb-2">
-            <strong className="text-sm text-gray-900">
+            <strong className="text-sm text-ink-text">
               {new Date(selected + 'T12:00:00Z').toLocaleDateString('en-US',
                 { weekday: 'long', month: 'long', day: 'numeric' })}
             </strong>
-            <button onClick={() => setSelected(null)} className="text-xs text-gray-400 hover:text-gray-700">close</button>
+            <button onClick={() => setSelected(null)} className="text-xs text-ink-faint hover:text-ink-muted">close</button>
           </div>
 
           {(appointmentsByDate[selected] || []).length > 0 && (
@@ -386,21 +401,21 @@ export default function AvailabilityPanel({
           <label className="flex items-center gap-2 mb-3 cursor-pointer">
             <input type="checkbox" checked={isWholeDayBlocked(selected)}
               onChange={() => toggleWholeDay(selected)} className="h-4 w-4" />
-            <span className="text-sm text-gray-800">Block the whole day</span>
+            <span className="text-sm text-ink-text">Block the whole day</span>
           </label>
 
           {!isWholeDayBlocked(selected) && (
             <>
               <div className="flex flex-wrap items-end gap-2 mb-2">
-                <label className="text-xs text-gray-600">
+                <label className="text-xs text-ink-muted">
                   Busy from
                   <input type="time" value={fromTime} onChange={(e) => setFromTime(e.target.value)}
-                    className="block mt-0.5 border border-gray-300 rounded-md px-2 py-1 text-sm" />
+                    className="block mt-0.5 border border-ink-border rounded-md px-2 py-1 text-sm" />
                 </label>
-                <label className="text-xs text-gray-600">
+                <label className="text-xs text-ink-muted">
                   until
                   <input type="time" value={toTime} onChange={(e) => setToTime(e.target.value)}
-                    className="block mt-0.5 border border-gray-300 rounded-md px-2 py-1 text-sm" />
+                    className="block mt-0.5 border border-ink-border rounded-md px-2 py-1 text-sm" />
                 </label>
                 <button onClick={() => addPartial(selected)}
                   className="bg-gray-800 text-white text-sm px-3 py-1.5 rounded-md">Block these hours</button>
@@ -410,10 +425,10 @@ export default function AvailabilityPanel({
           )}
 
           {blocksOn(selected).length > 0 ? (
-            <ul className="divide-y divide-gray-200 border border-gray-200 rounded-md bg-white">
+            <ul className="divide-y divide-ink-border border border-ink-border rounded-md bg-ink-card">
               {blocksOn(selected).map((b, i) => (
                 <li key={b.start + i} className="flex items-center justify-between px-2 py-1.5">
-                  <span className="text-sm text-gray-800">
+                  <span className="text-sm text-ink-text">
                     {coversWholeDay(b, selected, timezone) ? 'All day' : `${hhmm(b.start)} – ${hhmm(b.end)}`}
                   </span>
                   <button onClick={() => removeBlock(b)} className="text-xs text-red-600 hover:underline">remove</button>
@@ -421,14 +436,14 @@ export default function AvailabilityPanel({
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-gray-400">Nothing blocked this day.</p>
+            <p className="text-xs text-ink-faint">Nothing blocked this day.</p>
           )}
         </div>
       )}
 
-      <div className="flex items-center gap-4 mt-3 text-[0.7rem] text-gray-500">
-        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-red-600" /> blocked</span>
-        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-gray-100 border border-gray-200" /> closed weekly</span>
+      <div className="flex items-center gap-4 mt-3 text-[0.7rem] text-ink-muted">
+        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-brand-600" /> blocked</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-white/5 border border-ink-border" /> closed weekly</span>
         <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-500" /> has a booking</span>
       </div>
 
@@ -442,7 +457,7 @@ export default function AvailabilityPanel({
         >
           {saving ? 'Saving…' : dirty ? 'Save availability' : 'Saved'}
         </button>
-        {msg && <span className="text-xs text-gray-500">{msg}</span>}
+        {msg && <span className="text-xs text-ink-muted">{msg}</span>}
       </div>
     </div>
   );

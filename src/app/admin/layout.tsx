@@ -13,8 +13,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 shadow-sm">
+    <div className="min-h-screen bg-ink-bg">
+      <header className="bg-ink-card border-b border-ink-border shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <Link href="/admin" className="text-lg font-bold text-brand-900">
@@ -28,7 +28,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     pathname === item.href
                       ? 'bg-brand-900 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
+                      : 'text-ink-muted hover:bg-ink-hover'
                   }`}
                 >
                   {item.label}
@@ -38,7 +38,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
           <a
             href="https://www.bed-sync.com/admin.html"
-            className="text-xs text-gray-500 hover:text-brand-900"
+            className="text-xs text-ink-muted hover:text-brand-900"
           >
             Back to Bed Sync
           </a>
